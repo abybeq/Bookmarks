@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="container">
+    <!-- Breadcrumb navigation -->
+    <nav class="breadcrumb" id="breadcrumb"></nav>
+    
+    <!-- Search bar (hidden by default) -->
+    <div class="search-bar" id="search-bar">
+      <div class="search-icon-container" id="search-icon-container">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="M21 21l-4.35-4.35"/>
+        </svg>
+      </div>
+      <input type="text" class="search-input" id="search-input" placeholder="Search...">
+    </div>
+    
+    <!-- Items list -->
+    <div class="list-view" id="items-grid"></div>
+  </main>
+
+  <!-- Modal for adding links -->
+  <div class="modal-overlay" id="add-modal-overlay">
+    <div class="modal add-modal">
+      <div class="add-modal-header">
+        <h2 class="add-modal-title">Add bookmarks</h2>
+        <button type="button" class="add-modal-close" id="add-modal-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      
+      <form id="add-form">
+        <div class="add-form-rows" id="add-form-rows">
+          <div class="add-form-inputs" data-row="0">
+            <input type="text" class="add-input add-address" placeholder="Address" data-row="0">
+            <input type="text" class="add-input add-name" placeholder="Name" data-row="0">
+          </div>
+        </div>
+        
+        <button type="submit" class="add-submit-btn" id="add-submit-btn" disabled>Add</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal for adding folders -->
+  <div class="modal-overlay" id="add-folder-modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Create folder</h2>
+        <button type="button" class="modal-close" id="add-folder-modal-close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      
+      <form id="add-folder-form">
+        <div class="form-group">
+          <input type="text" id="folder-name" placeholder="New Folder" required>
+        </div>
+        
+        <button type="submit" class="modal-action-btn btn-primary" id="add-folder-submit-btn">Create</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal for editing items -->
+  <div class="modal-overlay" id="edit-modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">Edit</h2>
+        <button type="button" class="modal-close" id="cancel-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      
+      <form id="edit-form">
+        <input type="hidden" id="item-type" value="link">
+        <input type="hidden" id="item-id" value="">
+        
+        <div class="form-group">
+          <input type="text" id="item-title" placeholder="Name" required>
+        </div>
+        
+        <div class="form-group" id="url-group">
+          <input type="url" id="item-url" placeholder="https://youtube.com">
+        </div>
+        
+        <button type="submit" class="modal-action-btn btn-primary" id="submit-btn">Save</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete confirmation modal -->
+  <div class="modal-overlay" id="delete-modal-overlay">
+    <div class="modal modal-small">
+      <div class="modal-header">
+        <h2 class="modal-title">Delete folder</h2>
+        <button type="button" class="modal-close" id="delete-cancel-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <p class="modal-text">Are you sure you want to delete "<span id="delete-item-name"></span>"?</p>
+      <button type="button" class="modal-action-btn btn-danger" id="delete-confirm-btn">Delete</button>
+    </div>
+  </div>
+
+  <!-- Move mode banner -->
+  <div class="move-banner" id="move-banner">
+    <button class="move-banner-dismiss" id="move-banner-dismiss">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <div class="move-banner-icon" id="move-banner-icon"></div>
+    <span class="move-banner-text" id="move-banner-text">Move Link name to Home</span>
+    <button class="move-banner-action" id="move-banner-action">Move here</button>
+  </div>
+
+  <!-- Context menu for right-click on cards -->
+  <div class="context-menu" id="context-menu">
+    <button class="context-menu-item" id="context-open-all">Open all</button>
+    <button class="context-menu-item" id="context-copy-link">Copy link</button>
+    <button class="context-menu-item" id="context-move">Move</button>
+    <button class="context-menu-item" id="context-export">Export</button>
+    <button class="context-menu-item" id="context-edit">Edit</button>
+    <button class="context-menu-item context-menu-item-danger" id="context-delete">Delete</button>
+  </div>
+
+  <!-- Context menu for right-click on body/background -->
+  <div class="context-menu" id="body-context-menu">
+    <button class="context-menu-item" id="body-context-add">Add bookmark</button>
+    <button class="context-menu-item" id="body-context-add-folder">Create folder</button>
+    <div class="context-menu-separator" id="body-context-open-all-separator"></div>
+    <button class="context-menu-item" id="body-context-open-all">Open all</button>
+    <div class="context-menu-separator"></div>
+    <button class="context-menu-item" id="body-context-import">Import</button>
+    <button class="context-menu-item" id="body-context-export">Export</button>
+    <div class="context-menu-separator"></div>
+    <button class="context-menu-item" id="body-context-theme">Customize</button>
+  </div>
+  
+  <!-- Theme picker panel -->
+  <div class="theme-picker" id="theme-picker">
+    <div class="theme-picker-content">
+      <div class="theme-options">
+        <button class="theme-option" data-theme="frost">
+          <div class="theme-preview theme-preview-frost">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="default">
+          <div class="theme-preview theme-preview-default">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="blue">
+          <div class="theme-preview theme-preview-blue">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="lavender">
+          <div class="theme-preview theme-preview-lavender">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="slate">
+          <div class="theme-preview theme-preview-slate">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="mint">
+          <div class="theme-preview theme-preview-mint">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="sage">
+          <div class="theme-preview theme-preview-sage">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="sand">
+          <div class="theme-preview theme-preview-sand">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="amber">
+          <div class="theme-preview theme-preview-amber">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="terra">
+          <div class="theme-preview theme-preview-terra">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="mocha">
+          <div class="theme-preview theme-preview-mocha">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="rose">
+          <div class="theme-preview theme-preview-rose">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="blush">
+          <div class="theme-preview theme-preview-blush">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="orchid">
+          <div class="theme-preview theme-preview-orchid">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+        <button class="theme-option" data-theme="violet">
+          <div class="theme-preview theme-preview-violet">
+            <div class="preview-light"></div>
+            <div class="preview-dark"></div>
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Hidden file input for import -->
+  <input type="file" id="import-file-input" accept=".html,.htm" style="display: none;">
+
+  <script src="script.js"></script>
+</body>
+</html>
+
