@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=320">
+  <link rel="stylesheet" href="popup.css">
+  <title>Bookmark</title>
+</head>
+<body>
+  <div id="popup-container">
+    <!-- Main view -->
+    <div id="main-view" class="view">
+      <div class="popup-header">
+        <span class="popup-title">Bookmark saved</span>
+        <button class="delete-btn" type="button">Delete</button>
+      </div>
+      
+      <div class="name-input-wrapper">
+        <img class="bookmark-favicon" src="" alt="">
+        <input type="text" id="bookmark-name-input" class="bookmark-name-input" placeholder="Name">
+      </div>
+      
+      <button id="folder-picker-btn" class="folder-picker-btn" type="button">
+        <div class="folder-icon" id="selected-folder-icon"></div>
+        <span class="folder-name" id="selected-folder-name">Unsorted</span>
+      </button>
+    </div>
+
+    <!-- Folder picker view -->
+    <div id="folder-picker-view" class="view hidden">
+      <div class="folder-picker-header">
+        <button id="back-to-main-btn" class="back-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          <span class="folder-picker-title">Choose folder</span>
+        </button>
+        <button id="show-create-folder-btn" class="create-folder-btn" type="button">Add</button>
+      </div>
+      <div id="folder-list" class="folder-list"></div>
+    </div>
+
+    <!-- Create folder view -->
+    <div id="create-folder-view" class="view hidden">
+      <div class="folder-picker-header">
+        <button id="back-to-picker-btn" class="back-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          <span class="folder-picker-title">New folder</span>
+        </button>
+        <button id="create-folder-btn" class="create-btn" type="button">Add</button>
+      </div>
+      <div class="create-folder-form">
+        <div class="name-input-wrapper">
+          <div class="folder-icon" id="new-folder-icon"></div>
+          <input type="text" id="folder-name-input" class="folder-name-input" placeholder="Folder name">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+

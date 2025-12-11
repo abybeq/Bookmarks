@@ -22,7 +22,8 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Bookmark"
+    "default_title": "Bookmark",
+    "default_popup": "popup.html"
   },
   "background": {
     "service_worker": "background.js"
@@ -34,6 +35,12 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["modal-styles.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
 

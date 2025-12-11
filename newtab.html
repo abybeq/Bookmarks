@@ -138,6 +138,7 @@
   <!-- Context menu for right-click on cards -->
   <div class="context-menu" id="context-menu">
     <button class="context-menu-item" id="context-open-all">Open all</button>
+    <button class="context-menu-item" id="context-create-folder">Add folder</button>
     <button class="context-menu-item" id="context-copy-link">Copy link</button>
     <button class="context-menu-item" id="context-move">Move</button>
     <button class="context-menu-item" id="context-export">Export</button>
@@ -148,7 +149,7 @@
   <!-- Context menu for right-click on body/background -->
   <div class="context-menu" id="body-context-menu">
     <button class="context-menu-item" id="body-context-add">Add bookmark</button>
-    <button class="context-menu-item" id="body-context-add-folder">Create folder</button>
+    <button class="context-menu-item" id="body-context-add-folder">Add folder</button>
     <div class="context-menu-separator" id="body-context-open-all-separator"></div>
     <button class="context-menu-item" id="body-context-open-all">Open all</button>
     <div class="context-menu-separator"></div>
@@ -259,7 +260,7 @@
   <!-- Hidden file input for import -->
   <input type="file" id="import-file-input" accept=".html,.htm" style="display: none;">
 
-  <script src="script.js"></script>
+  <script type="module" src="main.js"></script>
 </body>
 </html>
 
