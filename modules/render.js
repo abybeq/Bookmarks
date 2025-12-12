@@ -29,7 +29,7 @@ import {
 } from './state.js';
 import { escapeHtml, getFolderIconSvg, getInboxIconSvg, generateId, normalizeUrl, getTitleFromUrl, isUrl } from './utils.js';
 import { getFaviconUrl, preloadVisibleFavicons, saveItems, saveStateForUndo } from './storage.js';
-import { getItemsForFolder, getLinkCountInFolder, getFolderDescendantCount, isFolderOrDescendant, getTotalBookmarkCount } from './navigation.js';
+import { getItemsForFolder, getLinkCountInFolder, getFolderDescendantCount, isFolderOrDescendant, getTotalBookmarkCount, renderBreadcrumb } from './navigation.js';
 
 // DOM elements
 let itemsGrid = null;
@@ -74,9 +74,21 @@ export function renderListView(folders, links) {
     itemsGrid = document.getElementById('items-grid');
   }
   
-  // Check if there are 0 bookmarks total - show empty state
+  // Check inline mode states first (before empty state check)
+  const inMoveMode = isInMoveMode();
+  const isInlineCreateActive = inlineFolderMode === 'create' && inlineFolderParentId === currentFolderId;
+  const inlineRenameId = inlineFolderMode === 'rename' ? inlineFolderTargetId : null;
+  const isInlineBookmarkCreateActive = inlineBookmarkMode === 'create' && inlineBookmarkParentId === currentFolderId;
+  const inlineBookmarkEditId = inlineBookmarkMode === 'edit' ? inlineBookmarkTargetId : null;
+  
+  // Check if there are 0 bookmarks AND 0 folders total - show empty state
+  // BUT skip empty state if inline create mode is active (user clicked add bookmark/folder)
   const totalBookmarks = getTotalBookmarkCount();
-  if (totalBookmarks === 0) {
+  const totalFolders = items.filter(item => item.type === 'folder' && item.id !== UNSORTED_FOLDER_ID).length;
+  const hasAnyItems = totalBookmarks > 0 || totalFolders > 0;
+  const shouldSkipEmptyState = isInlineCreateActive || isInlineBookmarkCreateActive;
+  
+  if (!hasAnyItems && !shouldSkipEmptyState) {
     itemsGrid.className = 'list-view empty-state-container';
     itemsGrid.innerHTML = `
       <div class="empty-state">
@@ -90,11 +102,6 @@ export function renderListView(folders, links) {
   itemsGrid.className = 'list-view';
   
   let listHtml = '';
-  const inMoveMode = isInMoveMode();
-  const isInlineCreateActive = inlineFolderMode === 'create' && inlineFolderParentId === currentFolderId;
-  const inlineRenameId = inlineFolderMode === 'rename' ? inlineFolderTargetId : null;
-  const isInlineBookmarkCreateActive = inlineBookmarkMode === 'create' && inlineBookmarkParentId === currentFolderId;
-  const inlineBookmarkEditId = inlineBookmarkMode === 'edit' ? inlineBookmarkTargetId : null;
   
   // Separate Unsorted folder from other folders
   const unsortedFolder = folders.find(f => f.id === UNSORTED_FOLDER_ID);
@@ -316,6 +323,8 @@ function attachInlineFolderInputHandlers() {
     } finally {
       setInlineFolderSaving(false);
       renderItems();
+      // Ensure breadcrumb is rendered after creating first item
+      renderBreadcrumb();
     }
   };
   
@@ -469,6 +478,8 @@ function attachInlineBookmarkInputHandlers() {
     } finally {
       setInlineBookmarkSaving(false);
       renderItems();
+      // Ensure breadcrumb is rendered after creating first item
+      renderBreadcrumb();
     }
   };
 

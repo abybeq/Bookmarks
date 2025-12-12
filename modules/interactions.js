@@ -201,6 +201,7 @@ export function startInlineFolderCreate() {
   setInlineFolderTargetId(null);
   setInlineFolderDraft('');
   if (renderItemsCallback) renderItemsCallback();
+  if (renderBreadcrumbCallback) renderBreadcrumbCallback();
 }
 
 export function startInlineFolderRename(folderId) {
@@ -228,6 +229,7 @@ export function startInlineBookmarkCreate() {
   setInlineBookmarkDraftUrl('');
   setInlineBookmarkDraftTitle('');
   if (renderItemsCallback) renderItemsCallback();
+  if (renderBreadcrumbCallback) renderBreadcrumbCallback();
 }
 
 export function startInlineBookmarkEdit(bookmarkId) {
@@ -892,8 +894,11 @@ export function elementIntersectsBox(element, box) {
 export function startBoxSelection(e) {
   if (isSearchMode || isInMoveMode()) return;
   
-  // Prevent box selection when empty state is shown
-  if (getTotalBookmarkCount() === 0) return;
+  // Prevent box selection when empty state is shown (no bookmarks AND no folders)
+  const totalBookmarks = getTotalBookmarkCount();
+  const totalFolders = items.filter(item => item.type === 'folder' && item.id !== UNSORTED_FOLDER_ID).length;
+  const hasAnyItems = totalBookmarks > 0 || totalFolders > 0;
+  if (!hasAnyItems) return;
   
   if (e.target.closest('.list-item') || 
       e.target.closest('.context-menu') || 

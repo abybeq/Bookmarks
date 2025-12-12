@@ -105,6 +105,7 @@ async function addItem(type, title, url = '') {
   items.push(newItem);
   await saveItems();
   renderItems();
+  renderBreadcrumb(); // Ensure breadcrumb is shown after adding first item
   
   return newItem;
 }

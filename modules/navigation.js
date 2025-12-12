@@ -4,7 +4,8 @@
 
 import {
   items, currentFolderId, setCurrentFolderId, navigationStack, setNavigationStack,
-  isInMoveMode, movingItemIds, UNSORTED_FOLDER_ID, clearSelectionState
+  isInMoveMode, movingItemIds, UNSORTED_FOLDER_ID, clearSelectionState,
+  inlineFolderMode, inlineFolderParentId, inlineBookmarkMode, inlineBookmarkParentId
 } from './state.js';
 import { escapeHtml } from './utils.js';
 import { saveItems } from './storage.js';
@@ -109,9 +110,17 @@ export function getBreadcrumbPath() {
 export function renderBreadcrumb() {
   const breadcrumb = document.getElementById('breadcrumb');
   const totalBookmarks = getTotalBookmarkCount();
+  const totalFolders = items.filter(item => item.type === 'folder' && item.id !== UNSORTED_FOLDER_ID).length;
+  const hasAnyItems = totalBookmarks > 0 || totalFolders > 0;
   
-  // Hide breadcrumb when there are 0 bookmarks
-  if (totalBookmarks === 0) {
+  // Check if inline create mode is active (user clicked add bookmark/folder)
+  // If so, show breadcrumb even when there are 0 items
+  const isInlineFolderCreate = inlineFolderMode === 'create' && inlineFolderParentId === currentFolderId;
+  const isInlineBookmarkCreate = inlineBookmarkMode === 'create' && inlineBookmarkParentId === currentFolderId;
+  const shouldShowBreadcrumb = hasAnyItems || isInlineFolderCreate || isInlineBookmarkCreate;
+  
+  // Hide breadcrumb when there are 0 items and no inline create mode
+  if (!shouldShowBreadcrumb) {
     breadcrumb.style.display = 'none';
     return;
   }
