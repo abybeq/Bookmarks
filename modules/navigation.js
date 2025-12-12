@@ -109,10 +109,14 @@ export function getBreadcrumbPath() {
 export function renderBreadcrumb() {
   const breadcrumb = document.getElementById('breadcrumb');
   const totalBookmarks = getTotalBookmarkCount();
+  
+  // Hide breadcrumb when there are 0 bookmarks
   if (totalBookmarks === 0) {
-    breadcrumb.innerHTML = '<span class="breadcrumb-empty-message">To add bookmarks, right-click with your mouse</span>';
+    breadcrumb.style.display = 'none';
     return;
   }
+  
+  breadcrumb.style.display = '';
   const path = getBreadcrumbPath();
   const isAtRoot = path.length === 1;
   

@@ -29,7 +29,7 @@ import {
 } from './state.js';
 import { escapeHtml, getFolderIconSvg, getInboxIconSvg, generateId, normalizeUrl, getTitleFromUrl, isUrl } from './utils.js';
 import { getFaviconUrl, preloadVisibleFavicons, saveItems, saveStateForUndo } from './storage.js';
-import { getItemsForFolder, getLinkCountInFolder, getFolderDescendantCount, isFolderOrDescendant } from './navigation.js';
+import { getItemsForFolder, getLinkCountInFolder, getFolderDescendantCount, isFolderOrDescendant, getTotalBookmarkCount } from './navigation.js';
 
 // DOM elements
 let itemsGrid = null;
@@ -72,6 +72,19 @@ export function renderItems() {
 export function renderListView(folders, links) {
   if (!itemsGrid) {
     itemsGrid = document.getElementById('items-grid');
+  }
+  
+  // Check if there are 0 bookmarks total - show empty state
+  const totalBookmarks = getTotalBookmarkCount();
+  if (totalBookmarks === 0) {
+    itemsGrid.className = 'list-view empty-state-container';
+    itemsGrid.innerHTML = `
+      <div class="empty-state">
+        <img src="icons/click.svg" alt="" class="empty-state-icon">
+        <span class="empty-state-text">To add bookmarks, right-click with your mouse</span>
+      </div>
+    `;
+    return;
   }
   
   itemsGrid.className = 'list-view';

@@ -630,6 +630,39 @@ body.is-dragging * {
   position: relative;
 }
 
+/* Empty state styles */
+.list-view.empty-state-container {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  max-width: 800px;
+  margin: 0;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  width: 100%;
+  mix-blend-mode: luminosity;
+}
+
+.empty-state-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  object-fit: contain;
+  mix-blend-mode: luminosity;
+}
+
+.empty-state-text {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
 .list-section {
   display: flex;
   flex-direction: column;

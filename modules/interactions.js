@@ -892,11 +892,15 @@ export function elementIntersectsBox(element, box) {
 export function startBoxSelection(e) {
   if (isSearchMode || isInMoveMode()) return;
   
+  // Prevent box selection when empty state is shown
+  if (getTotalBookmarkCount() === 0) return;
+  
   if (e.target.closest('.list-item') || 
       e.target.closest('.context-menu') || 
       e.target.closest('.modal-overlay') ||
       e.target.closest('.breadcrumb') ||
-      e.target.closest('.search-bar')) {
+      e.target.closest('.search-bar') ||
+      e.target.closest('.empty-state')) {
     return;
   }
   
