@@ -67,10 +67,19 @@ async function findExistingBookmark(url) {
   }
 }
 
-// Update the badge for a specific tab based on whether its URL is saved
+// Update the icon for a specific tab based on whether its URL is saved
 async function updateBadgeForTab(tabId, url) {
-  // Don't show badge for extension pages or about: pages
+  // Don't change icon for extension pages or about: pages
   if (!url || url.startsWith('chrome-extension://') || url.startsWith('about:') || url.startsWith('chrome://newtab')) {
+    // Reset to default icon
+    await chrome.action.setIcon({ 
+      tabId, 
+      path: {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+      }
+    });
     await chrome.action.setBadgeText({ tabId, text: '' });
     return;
   }
@@ -78,12 +87,27 @@ async function updateBadgeForTab(tabId, url) {
   const isSaved = await isUrlSaved(url);
   
   if (isSaved) {
-    // Show checkmark badge for saved pages - green background with white text for universal contrast
-    await chrome.action.setBadgeText({ tabId, text: '✓' });
-    await chrome.action.setBadgeBackgroundColor({ tabId, color: '#4CAF50' });
-    await chrome.action.setBadgeTextColor({ tabId, color: '#ffffff' });
+    // Swap to solid icon for saved pages
+    await chrome.action.setIcon({ 
+      tabId, 
+      path: {
+        "16": "icons/icon16-solid.png",
+        "48": "icons/icon48-solid.png",
+        "128": "icons/icon128-solid.png"
+      }
+    });
+    // Clear badge since we're using icon instead
+    await chrome.action.setBadgeText({ tabId, text: '' });
   } else {
-    // Clear badge for unsaved pages
+    // Reset to default icon for unsaved pages
+    await chrome.action.setIcon({ 
+      tabId, 
+      path: {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+      }
+    });
     await chrome.action.setBadgeText({ tabId, text: '' });
   }
 }
