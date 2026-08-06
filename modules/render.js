@@ -334,6 +334,7 @@ function attachInlineFolderInputHandlers() {
       finish(true);
     } else if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();
       finish(false);
     }
   };
@@ -489,6 +490,7 @@ function attachInlineBookmarkInputHandlers() {
       finish(true);
     } else if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();
       finish(false);
     }
   };
