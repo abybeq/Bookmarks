@@ -112,23 +112,14 @@ export function navigateToUrl(url, openInNewTab = false) {
   }
 }
 
-export async function performDefaultSearch(text, openInNewTab = false) {
+// Keep both click and keyboard activation on the same Ask destinations.
+export function openAskTarget(text, provider = 'google', openInNewTab = false) {
   const query = text.trim();
   if (!query) return;
-
-  if (!globalThis.chrome?.search?.query) {
-    console.error('chrome.search API is not available.');
-    return;
-  }
-
-  try {
-    await globalThis.chrome.search.query({
-      text: query,
-      disposition: openInNewTab ? 'NEW_TAB' : 'CURRENT_TAB'
-    });
-  } catch (error) {
-    console.error('Error running default search:', error);
-  }
+  const url = provider === 'chatgpt'
+    ? `https://chat.com/?q=${encodeURIComponent(query)}&submit=false`
+    : `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  navigateToUrl(url, openInNewTab);
 }
 
 // ============================================
@@ -137,6 +128,11 @@ export async function performDefaultSearch(text, openInNewTab = false) {
 
 export const DEFAULT_FOLDER_ICON = 'folder-closed';
 export const folderIconOptions = FOLDER_ICON_NAMES;
+
+const ICON_ALIASES = {
+  search: 'magnifying-glass',
+  history: 'clock-rotate-left'
+};
 
 export function isKnownFolderIcon(name) {
   return Object.hasOwn(ICONS, name);
@@ -147,7 +143,8 @@ function renderIconPaths(paths) {
 }
 
 export function getIconSvg(name, { className = '', width = null, height = null, fill = 'currentColor', style = '' } = {}) {
-  const icon = ICONS[name] || ICONS[DEFAULT_FOLDER_ICON];
+  const resolvedName = ICON_ALIASES[name] || name;
+  const icon = ICONS[resolvedName] || ICONS.globe;
   const paths = icon.paths;
   const viewBox = icon.viewBox;
   const classAttr = className ? ` class="${className}"` : '';
@@ -174,46 +171,51 @@ export const historyIconSvgHtml = `
 `;
 
 export function getFolderIconSvg(iconName = DEFAULT_FOLDER_ICON) {
+  const resolvedName = isKnownFolderIcon(iconName) ? iconName : DEFAULT_FOLDER_ICON;
   return `
-    ${getIconSvg(iconName, { width: 24, height: 24, fill: 'var(--text-secondary)' })}
+    ${getIconSvg(resolvedName, { width: 24, height: 24, fill: 'var(--text-secondary)' })}
   `;
 }
 
 // Icons for chrome:// results use the same set, encoded as self-contained data URLs.
 const chromePageIconNames = {
   settings: 'gear',
-  extensions: 'extension',
-  history: 'history',
+  extensions: 'puzzle-piece',
+  history: 'clock-rotate-left',
   downloads: 'download',
   bookmarks: 'bookmark',
   'password-manager': 'key',
   flags: 'flag',
-  apps: 'grid',
-  about: 'info-alternate',
-  newtab: 'window',
+  apps: 'table-cells-large',
+  about: 'circle-info',
+  newtab: 'window-maximize',
   'safe-browsing': 'shield',
   print: 'print',
-  inspect: 'view',
-  accessibility: 'accessibility',
-  gpu: 'computer-chip',
-  'net-internals': 'network',
-  sync: 'sync',
-  autofill: 'card',
+  inspect: 'eye',
+  accessibility: 'universal-access',
+  gpu: 'microchip',
+  'net-internals': 'network-wired',
+  sync: 'arrows-rotate',
+  autofill: 'credit-card',
   default: 'globe'
 };
 
+function getChromePageIconName(url) {
+  const page = url.replace('chrome://', '').split('/')[0].toLowerCase();
+  const iconName = chromePageIconNames[page] || chromePageIconNames.default;
+  return Object.hasOwn(ICONS, iconName) ? iconName : chromePageIconNames.default;
+}
+
 // Standalone image callers receive the current secondary text color.
 export function getChromePageIcon(url) {
-  const page = url.replace('chrome://', '').split('/')[0].toLowerCase();
-  const svg = getIconSvg(chromePageIconNames[page] || chromePageIconNames.default, {
+  const svg = getIconSvg(getChromePageIconName(url), {
     fill: getComputedStyle(document.body).getPropertyValue('--text-secondary').trim()
   });
   return 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 
 export function getChromePageIconSvg(url, className = '') {
-  const page = url.replace('chrome://', '').split('/')[0].toLowerCase();
-  return getIconSvg(chromePageIconNames[page] || chromePageIconNames.default, {
+  return getIconSvg(getChromePageIconName(url), {
     className: `chrome-page-icon ${className}`.trim(),
     width: 24,
     height: 24

@@ -12,3 +12,10 @@ Source: https://github.com/FortAwesome/Font-Awesome/tree/6.7.2
 Reference collection: https://www.streamlinehq.com/icons/font-awesome-solid
 
 Artwork is centered with padding for the existing interface. Paths are unchanged. All assets are bundled locally.
+
+## ChatGPT favicon
+
+`icons/chatgpt.webp` is the unmodified 48×48 favicon linked by https://chatgpt.com/.
+The ChatGPT logo is a trademark of OpenAI and is used to identify the destination.
+
+Source: https://chatgpt.com/cdn/assets/favicon-48x48-glnpepm0.webp

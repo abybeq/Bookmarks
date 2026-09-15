@@ -19,7 +19,7 @@ files = {
     'PRIVACY.md', 'THIRD_PARTY_NOTICES.md',
     'icon-sources/font-awesome-solid/LICENSE.txt',
     'fonts/geist-mono-400.woff2', 'fonts/OFL.txt',
-    'icons/bookmark.svg', 'icons/click.svg', 'icons/folder.svg', 'icons/note.svg',
+    'icons/chatgpt.webp', 'icons/bookmark.svg', 'icons/click.svg', 'icons/folder.svg', 'icons/note.svg',
     *manifest['icons'].values(), *manifest['action']['default_icon'].values(),
 }
 # Include only modules reachable from the actual entry point.

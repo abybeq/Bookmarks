@@ -34,15 +34,14 @@
   <!-- Delete confirmation modal -->
   <div class="modal-overlay" id="delete-modal-overlay">
     <div class="modal modal-small" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" aria-describedby="delete-modal-description">
-      <div class="delete-modal-icon" id="delete-modal-icon" aria-hidden="true"></div>
-      <div class="delete-modal-copy">
-        <h2 class="modal-title" id="delete-modal-title">Delete folder?</h2>
-        <p class="modal-text" id="delete-modal-description">0 bookmarks will be deleted</p>
+      <div class="delete-modal-content">
+        <div class="delete-modal-icon" id="delete-modal-icon" aria-hidden="true"></div>
+        <div class="delete-modal-copy">
+          <h2 class="modal-title" id="delete-modal-title">Delete folder?</h2>
+          <p class="modal-text" id="delete-modal-description">0 bookmarks will be deleted</p>
+        </div>
       </div>
       <button type="button" class="modal-action-btn btn-danger" id="delete-confirm-btn">Delete</button>
-      <button type="button" class="modal-close" id="delete-cancel-btn" aria-label="Close delete dialog">
-        <svg viewBox="-149.33333333333331 -85.33333333333331 682.6666666666666 682.6666666666666" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></svg>
-      </button>
     </div>
   </div>
 
@@ -51,6 +50,7 @@
     <button class="context-menu-item" id="context-open-all">Open all</button>
     <button class="context-menu-item" id="context-create-folder">Add folder</button>
     <button class="context-menu-item" id="context-copy-link">Copy link</button>
+    <button class="context-menu-item" id="context-show-in-folder">Show in folder</button>
     <button class="context-menu-item" id="context-export">Export</button>
     <button class="context-menu-item" id="context-edit">Edit</button>
     <button class="context-menu-item" id="context-change-icon">Change icon</button>

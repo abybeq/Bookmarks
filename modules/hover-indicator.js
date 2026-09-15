@@ -13,7 +13,6 @@ export function initHoverIndicator() {
   let activeItem = null;
   let pointerItem = null;
   let keyboardItem = null;
-  let activeSource = null;
   let hideTimer = null;
   const movementAnimations = new WeakMap();
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -33,6 +32,11 @@ export function initHoverIndicator() {
     if (hideTimer === null) return;
     clearTimeout(hideTimer);
     hideTimer = null;
+  };
+
+  const setPointerItem = (item) => {
+    pointerItem = item;
+    itemsGrid.classList.toggle('has-pointer-hover', Boolean(pointerItem?.isConnected));
   };
 
   const moveIndicator = (item, animateMovement = true) => {
@@ -108,14 +112,11 @@ export function initHoverIndicator() {
     let preferredItem = null;
     let animateMovement = false;
 
-    if (activeSource === 'pointer' && pointerItem?.isConnected) {
+    if (pointerItem?.isConnected) {
       preferredItem = pointerItem;
       animateMovement = true;
     } else if (keyboardItem?.isConnected) {
       preferredItem = keyboardItem;
-    } else if (pointerItem?.isConnected) {
-      preferredItem = pointerItem;
-      animateMovement = true;
     }
 
     if (preferredItem?.isConnected) {
@@ -134,9 +135,9 @@ export function initHoverIndicator() {
     if (event.pointerType === 'touch') return;
 
     const item = event.target.closest(HOVER_ITEM_SELECTOR);
-    if (!item || item === activeItem) return;
-    pointerItem = item;
-    activeSource = 'pointer';
+    if (!item) return;
+    setPointerItem(item);
+    if (item === activeItem) return;
     moveIndicator(item);
   });
 
@@ -146,13 +147,12 @@ export function initHoverIndicator() {
 
     const nextItem = event.relatedTarget?.closest?.(HOVER_ITEM_SELECTOR);
     if (nextItem) return;
-    pointerItem = null;
+    setPointerItem(null);
     scheduleHide();
   });
 
   itemsGrid.addEventListener('pointerleave', () => {
-    pointerItem = null;
-    activeSource = keyboardItem?.isConnected ? 'keyboard' : null;
+    setPointerItem(null);
     showPreferredItem();
   });
 
@@ -161,7 +161,6 @@ export function initHoverIndicator() {
     if (nextKeyboardItem === keyboardItem) return;
 
     keyboardItem = nextKeyboardItem;
-    activeSource = keyboardItem ? 'keyboard' : pointerItem ? 'pointer' : null;
     showPreferredItem();
   });
 

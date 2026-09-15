@@ -12,7 +12,7 @@ import {
 // Import utilities
 import {
   isValidUrl, getTitleFromUrl, showPasteNotification, navigateToUrl, showNotification,
-  performDefaultSearch
+  openAskTarget
 } from './modules/utils.js';
 
 // Import storage (Chrome bookmarks API)
@@ -30,7 +30,7 @@ import {
 
 // Import search
 import {
-  initSearchElements, enterSearchMode, exitSearchMode, handleSearchInput
+  initSearchElements, enterSearchMode, exitSearchMode, handleSearchInput, showMoreHistory
 } from './modules/search.js';
 
 // Import render
@@ -49,7 +49,7 @@ import {
 // Import keyboard
 import {
   initKeyboardElements, setKeyboardCallbacks, initKeyboardShortcuts, focusItem,
-  resetKeyboardFocus
+  focusItemById, resetKeyboardFocus
 } from './modules/keyboard.js';
 
 // Import import/export
@@ -117,13 +117,21 @@ async function handleUndo() {
 // NAVIGATION WRAPPER
 // ============================================
 
-function navigateToFolderWrapper(folderId, pushState = true, autoFocusFirst = false, restoreFullPath = false) {
+function navigateToFolderWrapper(
+  folderId,
+  pushState = true,
+  autoFocusFirst = false,
+  restoreFullPath = false,
+  restoreFocusItemId = null
+) {
   return navigateToFolder(folderId, pushState, autoFocusFirst, {
     renderItems,
     renderBreadcrumb,
     resetKeyboardFocus,
     focusItem,
-    restoreFullPath
+    focusItemById,
+    restoreFullPath,
+    restoreFocusItemId
   });
 }
 
@@ -156,6 +164,11 @@ function initEventDelegation() {
     const itemType = listItem.dataset.type;
     const itemId = listItem.dataset.itemId;
 
+    if (itemType === 'history-more') {
+      showMoreHistory();
+      return;
+    }
+
     // URL items
     if (listItem.classList.contains('url-item')) {
       const url = listItem.dataset.url;
@@ -167,7 +180,7 @@ function initEventDelegation() {
     if (listItem.classList.contains('suggestion-item')) {
       const suggestionText = listItem.dataset.suggestion;
       if (suggestionText) {
-        await performDefaultSearch(suggestionText);
+        openAskTarget(suggestionText, listItem.dataset.provider, e.metaKey || e.ctrlKey);
       }
       return;
     }
@@ -219,7 +232,7 @@ function initEventDelegation() {
 
   // Context menu delegation
   itemsGrid.addEventListener('contextmenu', (e) => {
-    const listItem = e.target.closest('.list-item[data-item-id]');
+    const listItem = e.target.closest('.list-item[data-item-id], .browser-history-item');
     if (listItem) {
       e.preventDefault();
       e.stopPropagation();
@@ -324,10 +337,9 @@ function initEventDelegation() {
 // ============================================
 
 function initModalEventListeners() {
-  const { deleteModalOverlay, deleteCancelBtn, deleteConfirmBtn } = getModalElements();
+  const { deleteModalOverlay, deleteConfirmBtn } = getModalElements();
 
   // Delete modal
-  deleteCancelBtn.addEventListener('click', closeDeleteModal);
   deleteModalOverlay.addEventListener('click', (e) => {
     if (e.target === deleteModalOverlay) closeDeleteModal();
   });
@@ -478,7 +490,7 @@ async function init() {
   // Initialize event delegation and context menu early for interactivity.
   initEventDelegation();
   initHoverIndicator();
-  initContextMenu(deleteItem, navigateToFolderWrapper);
+  initContextMenu(deleteItem, navigateToFolderWrapper, exitSearchModeWrapper);
 
   // Initialize modal listeners and bookmark listeners
   initModalEventListeners();

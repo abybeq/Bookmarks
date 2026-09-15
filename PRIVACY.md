@@ -20,7 +20,7 @@ To display website icons, the extension sends website domain names to Favicon.im
 
 When you add a link, the extension may request that URL to read its page title. The destination website receives the request and ordinary network information, including your IP address. Some websites block these requests; the extension can fall back to a title derived from the URL.
 
-When you choose a web search, the extension sends the query through your browser's default search provider. When you open a bookmark, the browser connects to the destination website. These services have their own privacy policies.
+When you choose Google in Ask, the extension opens Google with your query. When you choose ChatGPT, it opens chat.com with your text in the URL to prefill the ChatGPT input without automatically submitting the message. When you open a bookmark, the browser connects to the destination website. These services have their own privacy policies.
 
 ## Developer access and use
 

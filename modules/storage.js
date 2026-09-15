@@ -7,8 +7,8 @@ import {
   popFromUndoStack, peekUndoStack, isUndoExpired, cleanExpiredUndoActions
 } from './state.js';
 import {
-  showNotification, getIconSvg, escapeHtml, getChromePageIconSvg, getChromePageIcon,
-  folderIconOptions, isKnownFolderIcon, DEFAULT_FOLDER_ICON
+  showNotification, escapeHtml, getChromePageIconSvg, getChromePageIcon,
+  folderIconOptions, isKnownFolderIcon, DEFAULT_FOLDER_ICON, globeIconSvgHtml
 } from './utils.js';
 
 // ============================================
@@ -140,7 +140,7 @@ export async function fetchAndCacheFavicon(url) {
     }
     for (const icon of document.querySelectorAll('[data-favicon-placeholder]')) {
       if (icon.dataset.faviconPlaceholder === placeholder) {
-        icon.outerHTML = renderFaviconSource(resolvedUrl);
+        icon.outerHTML = renderFaviconSource(resolvedUrl, icon.dataset.faviconFallback);
       }
     }
     return resolvedUrl;
@@ -149,17 +149,20 @@ export async function fetchAndCacheFavicon(url) {
   }
 }
 
-function renderFaviconSource(source) {
+function renderFaviconSource(source, fallback = 'bookmark') {
   if (source === DEFAULT_FAVICON || source.startsWith(`${DEFAULT_FAVICON}#`)) {
-    return `<span class="bookmark-placeholder" data-favicon-placeholder="${escapeHtml(source)}">${getIconSvg('bookmark', { width: 24, height: 24 })}</span>`;
+    if (fallback === 'globe') {
+      return `<span data-favicon-placeholder="${escapeHtml(source)}" data-favicon-fallback="globe">${globeIconSvgHtml}</span>`;
+    }
+    return `<img src="${DEFAULT_FAVICON}" alt="" class="bookmark-placeholder" data-favicon-placeholder="${escapeHtml(source)}">`;
   }
   return `<img src="${escapeHtml(source)}" alt="" loading="lazy">`;
 }
 
 // Inline system icons and placeholders inherit the active theme without re-rendering.
-export function getFaviconHtml(url) {
+export function getFaviconHtml(url, fallback = 'bookmark') {
   if (url.startsWith('chrome://')) return getChromePageIconSvg(url);
-  return renderFaviconSource(getFaviconUrl(url));
+  return renderFaviconSource(getFaviconUrl(url), fallback);
 }
 
 // Get favicon URL (sync, will cache async)
@@ -359,6 +362,7 @@ async function getBookmarkSnapshot() {
           const { children, ...item } = child;
           searchEntries.push({
             item,
+            parentTitle: node.id === ROOT_FOLDER_ID ? 'Bookmarks' : node.title,
             title: item.title.toLowerCase(),
             url: item.url?.toLowerCase() || '',
             ...counts.get(item.id)

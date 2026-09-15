@@ -10,7 +10,9 @@ import {
   setInlineBookmarkDraftUrl, setInlineBookmarkDraftTitle, setInlineBookmarkSaving,
   resetInlineBookmarkState
 } from './state.js';
-import { escapeHtml, getFolderIconSvg, normalizeUrl, getTitleFromUrl, isUrl } from './utils.js';
+import {
+  DEFAULT_FOLDER_ICON, escapeHtml, getFolderIconSvg, normalizeUrl, getTitleFromUrl, isUrl
+} from './utils.js';
 import {
   getFaviconHtml, getBookmarks, createBookmark, createFolder, updateBookmark,
   getTotalBookmarkCount, getLinkCountInFolder, getFolderDescendantCount, saveCreateForUndo,
@@ -177,7 +179,7 @@ function renderInlineFolderInput({ mode, value = '', folderId = '' }) {
   return `
     <div class="list-item inline-folder-item" data-inline-mode="${mode}" ${folderId ? `data-folder-id="${folderId}"` : ''}>
       <div class="list-item-icon">
-        ${getFolderIconSvg(folderId ? getFolderIconName(folderId) : 'folder')}
+        ${getFolderIconSvg(folderId ? getFolderIconName(folderId) : DEFAULT_FOLDER_ICON)}
       </div>
       <input
         type="text"

@@ -174,7 +174,9 @@ export async function navigateToFolder(folderId, pushState = true, autoFocusFirs
     renderBreadcrumb: renderBreadcrumbCallback,
     resetKeyboardFocus,
     focusItem,
-    restoreFullPath = false
+    focusItemById,
+    restoreFullPath = false,
+    restoreFocusItemId = null
   } = callbacks;
 
   // Clear selection when navigating
@@ -223,11 +225,14 @@ export async function navigateToFolder(folderId, pushState = true, autoFocusFirs
   const renderPromise = renderItems ? renderItems() : null;
   if (renderBreadcrumbCallback) renderBreadcrumbCallback();
 
-  // Auto-focus first item if navigating with keyboard
-  if (autoFocusFirst && focusItem) {
+  // Restore the folder we came from, with the first item as a fallback.
+  if ((autoFocusFirst || restoreFocusItemId) && focusItem) {
     await renderPromise;
     if (folderId === currentFolderId) {
-      focusItem(0);
+      const restored = restoreFocusItemId && focusItemById
+        ? focusItemById(restoreFocusItemId)
+        : false;
+      if (!restored && autoFocusFirst) focusItem(0);
     }
   }
 }

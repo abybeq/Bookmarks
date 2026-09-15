@@ -10,10 +10,17 @@ import {
 } from './utils.js';
 import {
   getFaviconHtml, getCachedBookmarkSearchEntries, loadBookmarkSearchEntries,
-  getFolderIconName
+  getFolderIconName, getFaviconUrl
 } from './storage.js';
 
 const MIN_HISTORY_QUERY_LENGTH = 2;
+const INITIAL_HISTORY_LIMIT = 8;
+const HISTORY_PAGE_SIZE = 20;
+let historyLimit = INITIAL_HISTORY_LIMIT;
+let historyLimitQuery = '';
+let loadingHistoryId = null;
+const GOOGLE_SEARCH_URL = 'https://www.google.com';
+const CHATGPT_FAVICON_URL = 'icons/chatgpt.webp';
 let searchBar;
 let searchInput;
 let searchIconContainer;
@@ -24,6 +31,12 @@ let lastFocusItem;
 let displayedHistory = [];
 let displayedHistoryQuery = '';
 const sections = new Map();
+let folderView = null;
+let searchFocusWasNavigated = false;
+
+export function markSearchFocusNavigated() {
+  searchFocusWasNavigated = true;
+}
 
 export function initSearchElements() {
   searchBar = document.getElementById('search-bar');
@@ -47,7 +60,8 @@ export function initSearchElements() {
 
 export function setSearchIcon(type, faviconUrl = null) {
   if (!searchIconContainer) return;
-  const html = type === 'globe' ? globeIconSvgHtml
+  const html = type === 'website' && faviconUrl ? getFaviconHtml(faviconUrl, 'globe')
+    : type === 'globe' ? globeIconSvgHtml
     : type === 'folder' ? getFolderIconSvg()
     : type === 'link' ? linkIconSvgHtml
     : type === 'history' ? historyIconSvgHtml
@@ -66,13 +80,25 @@ export function setSearchResultType(type = '') {
     folder: 'Folder',
     link: 'Bookmark',
     'browser-history': 'History',
+    'history-more': 'History',
     'chrome-page': 'Chrome page',
-    suggestion: 'Search',
+    suggestion: 'Google',
+    chatgpt: 'ChatGPT',
     url: 'Website'
   };
   const label = labels[type] || '';
   searchResultType.textContent = label;
   searchResultType.hidden = !label;
+}
+
+export function showAskTarget(provider = 'google') {
+  if (provider === 'chatgpt') setSearchIcon('favicon', CHATGPT_FAVICON_URL);
+  else setSearchIcon('favicon', getFaviconUrl(GOOGLE_SEARCH_URL));
+  setSearchResultType(provider === 'chatgpt' ? 'chatgpt' : 'suggestion');
+}
+
+export function showGoogleSearchTarget() {
+  showAskTarget('google');
 }
 
 export function enterSearchMode(initialChar = '', focusItem) {
@@ -88,6 +114,7 @@ export function enterSearchMode(initialChar = '', focusItem) {
   searchInput.value = initialChar;
   searchInput.focus();
   searchInput.selectionStart = searchInput.selectionEnd = initialChar.length;
+  showGoogleSearchTarget();
   renderSearchResults(focusItem);
 }
 
@@ -101,8 +128,15 @@ export function exitSearchMode(renderItems, renderBreadcrumb, resetKeyboardFocus
   document.body.classList.remove('search-active');
   searchInput.value = '';
   sections.clear();
+  if (folderView) {
+    itemsGrid.className = folderView.className;
+    itemsGrid.replaceChildren(folderView.content);
+    folderView = null;
+  }
   displayedHistory = [];
   displayedHistoryQuery = '';
+  historyLimit = INITIAL_HISTORY_LIMIT;
+  historyLimitQuery = '';
   setSearchIcon('search');
   setSearchResultType();
   resetKeyboardFocus?.();
@@ -123,17 +157,56 @@ export function searchAllItems(query) {
   return { folders, links, chromePages: searchChromePages(normalizedQuery) };
 }
 
-export async function searchBrowserHistory(query) {
+export async function searchBrowserHistory(query, limit = INITIAL_HISTORY_LIMIT, isCurrent = () => true) {
   if (query.length < MIN_HISTORY_QUERY_LENGTH || !chrome.history) return [];
   try {
-    const results = await chrome.history.search({ text: query, maxResults: 8, startTime: 0 });
-    return results.filter(item => item.url).map(item => ({
-      ...item,
-      title: item.title || item.url
-    }));
+    // Fetch one extra unsaved URL to determine whether Show more is needed.
+    let maxResults = limit + 1;
+    while (isCurrent()) {
+      const results = await chrome.history.search({ text: query, maxResults, startTime: 0 });
+      if (!isCurrent()) return [];
+      const history = unsavedHistory(results.filter(item => item.url)).map(item => ({
+        ...item, title: item.title || item.url
+      }));
+      if (history.length > limit || results.length < maxResults) return history;
+      maxResults *= 2;
+    }
   } catch (error) {
     console.error('Error searching browser history:', error);
-    return [];
+  }
+  return [];
+}
+
+function historyRows(history) {
+  const rows = history.slice(0, historyLimit).map(item => row(
+    `history:${item.url}`, 'browser-history', item.title, item.url, formatVisitTime(item.lastVisitTime)
+  ));
+  if (history.length > historyLimit) rows.push(row('history-more', 'history-more', 'Show more'));
+  return rows;
+}
+
+export async function showMoreHistory(focusNewResults = false) {
+  if (!isSearchMode || loadingHistoryId === currentSearchId ||
+      unsavedHistory(displayedHistory).length <= historyLimit) return;
+  const requestId = currentSearchId + 1;
+  setCurrentSearchId(requestId);
+  loadingHistoryId = requestId;
+  const isCurrent = () => isSearchMode && currentSearchId === requestId;
+  const previousLimit = historyLimit;
+  const nextLimit = historyLimit + HISTORY_PAGE_SIZE;
+  const results = await searchBrowserHistory(searchQuery.trim(), nextLimit, isCurrent);
+  if (loadingHistoryId === requestId) loadingHistoryId = null;
+  if (!isCurrent() || !results.length) return;
+  const shouldMoveFocus = focusNewResults &&
+    itemsGrid.querySelector('.keyboard-focused')?.dataset.type === 'history-more';
+  historyLimit = nextLimit;
+  displayedHistory = results;
+  displayedHistoryQuery = searchQuery.trim().toLowerCase();
+  renderHistory(searchAllItems(searchQuery), results, lastFocusItem);
+  if (shouldMoveFocus && results[previousLimit]) {
+    const key = `history:${results[previousLimit].url}`;
+    const index = getNavigableItems().findIndex(item => item.dataset.searchKey === key);
+    if (index >= 0) lastFocusItem?.(index);
   }
 }
 
@@ -143,46 +216,64 @@ function unsavedHistory(history) {
   return history.filter(item => !savedUrls.has(item.url.toLowerCase()));
 }
 
-function row(key, type, title, url = '', meta = '', itemId = '') {
-  return { key, type, title, url, meta, itemId };
+function row(key, type, title, url = '', meta = '', itemId = '', parentTitle = '') {
+  return { key, type, title, url, meta, itemId, parentTitle };
 }
 
 function updateRow(element, data) {
   const previous = element.searchRow;
+  if (data.type === 'folder' && (!previous || previous.parentTitle !== data.parentTitle)) {
+    element.querySelector('.list-item-url').textContent = data.parentTitle;
+  }
   if (!previous || previous.title !== data.title) {
     element.querySelector('.list-item-title').textContent = data.title;
   }
   if (!previous || previous.meta !== data.meta) {
-    const meta = element.querySelector('.list-item-meta, .list-item-url');
+    const meta = element.querySelector('.list-item-meta') || element.querySelector('.list-item-url');
     if (meta) meta.textContent = data.meta;
   }
   if (!previous || previous.url !== data.url) {
     if (element.tagName === 'A') element.setAttribute('href', data.url);
     if (data.type === 'url') element.dataset.url = data.url;
+    if (data.type === 'browser-history') element.querySelector('.list-item-url').textContent = data.url;
   }
-  if (data.type === 'suggestion') element.dataset.suggestion = data.title;
-  const iconKey = data.type === 'folder' ? getFolderIconName(data.itemId)
-    : data.type === 'suggestion' ? 'search' : data.url;
+  if (data.type === 'suggestion' || data.type === 'chatgpt') {
+    element.dataset.suggestion = data.title;
+    element.dataset.provider = data.type === 'chatgpt' ? 'chatgpt' : 'google';
+  }
+  const iconKey = data.type === 'chatgpt' ? CHATGPT_FAVICON_URL : data.type === 'history-more' ? 'history-more' : data.type === 'folder' ? getFolderIconName(data.itemId)
+    : data.type === 'suggestion' ? GOOGLE_SEARCH_URL : data.url;
   if (!previous || previous.iconKey !== iconKey) {
-    element.querySelector('.list-item-icon').innerHTML = data.type === 'folder'
+    element.querySelector('.list-item-icon').innerHTML = data.type === 'chatgpt' ? `<img src="${CHATGPT_FAVICON_URL}" alt="">` : data.type === 'history-more' ? getIconSvg('chevron-down', { fill: 'var(--text-secondary)' }) : data.type === 'folder'
       ? getFolderIconSvg(iconKey)
-      : data.type === 'suggestion' ? getIconSvg('search') : getFaviconHtml(data.url);
+      : data.type === 'suggestion' ? getFaviconHtml(GOOGLE_SEARCH_URL)
+        : getFaviconHtml(data.url, data.type === 'url' ? 'globe' : 'bookmark');
   }
   element.searchRow = { ...data, iconKey };
 }
 
 function createRow(data) {
   const isLink = ['link', 'browser-history', 'chrome-page'].includes(data.type);
-  const element = document.createElement(isLink ? 'a' : 'div');
+  const element = document.createElement(data.type === 'history-more' ? 'button' : isLink ? 'a' : 'div');
   element.className = `list-item${['url', 'suggestion', 'browser-history', 'chrome-page'].includes(data.type) ? ` ${data.type}-item` : ''}`;
+  if (data.type === 'chatgpt') element.classList.add('suggestion-item');
+  if (data.type === 'history-more') {
+    element.type = 'button';
+    element.classList.add('history-more-item');
+  }
   element.dataset.type = data.type;
   element.dataset.searchKey = data.key;
   if (data.itemId) element.dataset.itemId = data.itemId;
   element.innerHTML = '<div class="list-item-icon"></div><span class="list-item-title"></span>';
-  if (['folder', 'link', 'browser-history', 'chrome-page'].includes(data.type)) {
+  if (['folder', 'link', 'browser-history', 'chrome-page', 'suggestion', 'chatgpt'].includes(data.type)) {
     const meta = document.createElement('span');
     meta.className = ['link', 'chrome-page'].includes(data.type) ? 'list-item-url' : 'list-item-meta';
     element.append(meta);
+  }
+  if (data.type === 'browser-history' || data.type === 'folder') {
+    const url = document.createElement('span');
+    url.className = 'list-item-url';
+    element.querySelector('.list-item-title').after(url);
   }
   updateRow(element, data);
   return element;
@@ -226,7 +317,7 @@ function updateSection(key, title, rows) {
 
 function renderResults(query, matches, history, focusItem, preserveFocus) {
   const focused = itemsGrid.querySelector('.keyboard-focused');
-  const focusedKey = preserveFocus ? focused?.dataset.searchKey : null;
+  const focusedKey = preserveFocus && searchFocusWasNavigated ? focused?.dataset.searchKey : null;
   const { folders, links, chromePages } = matches;
   const queryIsUrl = isUrl(query);
   const hasBookmarks = folders.length + links.length + chromePages.length > 0;
@@ -236,26 +327,32 @@ function renderResults(query, matches, history, focusItem, preserveFocus) {
   }
   groups.push(['folders', 'Folders', folders.map(entry => row(
     `folder:${entry.item.id}`, 'folder', entry.item.title, '',
-    entry.folders > 0 ? `${entry.folders} ⋅ ${entry.links}` : `${entry.links}`, entry.item.id
+    entry.folders > 0 ? `${entry.folders} ⋅ ${entry.links}` : `${entry.links}`, entry.item.id, entry.parentTitle
   ))]);
   groups.push(['bookmarks', 'Bookmarks', links.map(({ item }) => row(
     `link:${item.id}`, 'link', item.title, item.url, item.url, item.id
   ))]);
-  groups.push(['browser-history', 'History', history.map(item => row(
-    `history:${item.url}`, 'browser-history', item.title, item.url, formatVisitTime(item.lastVisitTime)
-  ))]);
+  groups.push(['browser-history', 'History', historyRows(history)]);
   if (query && (!queryIsUrl || !hasBookmarks)) {
-    groups.push(['suggestions', 'Search', [queryIsUrl
-      ? row('url', 'url', query, normalizeUrl(query))
-      : row('query', 'suggestion', query)]]);
+    groups.push(queryIsUrl
+      ? ['url', 'Open', [row('url', 'url', query, normalizeUrl(query))]]
+      : ['suggestions', 'Ask', [
+        row('query', 'suggestion', query, '', 'Google'),
+        row('chatgpt', 'chatgpt', query, '', 'ChatGPT')
+      ]]);
   }
   groups.push(['chrome-pages', 'Chrome pages', chromePages.map(page => row(
     `chrome:${page.url}`, 'chrome-page', page.title, page.url, page.url
   ))]);
 
+  // Keep the rendered folder view detached while searching so cancelling can
+  // restore it in the same frame, including already loaded favicons.
+  if (!sections.size) {
+    const content = document.createDocumentFragment();
+    content.append(...itemsGrid.childNodes);
+    folderView = { className: itemsGrid.className, content };
+  }
   itemsGrid.className = 'list-view';
-  // Folder view is discarded only once when entering search.
-  if (!sections.size) itemsGrid.replaceChildren();
   const visibleGroups = groups.filter(([, , rows]) => rows.length);
   const keys = new Set(visibleGroups.map(([key]) => key));
   for (const [key, section] of sections) {
@@ -270,19 +367,18 @@ function renderResults(query, matches, history, focusItem, preserveFocus) {
     if (element !== cursor) itemsGrid.insertBefore(element, cursor);
     cursor = element.nextSibling;
   }
-  renderSearchCount(folders.length + links.length + chromePages.length + history.length);
+  renderSearchCount(folders.length + links.length + chromePages.length + Math.min(history.length, historyLimit));
   const items = getNavigableItems();
   const index = focusedKey ? items.findIndex(item => item.dataset.searchKey === focusedKey) : -1;
   if (index >= 0) {
     // History can shift indexes without changing the selected result.
     setFocusedItemIndex(index);
-  } else if (!preserveFocus || focusedKey) {
+  } else if (!preserveFocus || !searchFocusWasNavigated || focusedKey) {
     if (items.length && focusItem) focusItem(0);
     else setFocusedItemIndex(-1);
   }
   if (!items.length) {
-    setSearchIcon('search');
-    setSearchResultType();
+    showGoogleSearchTarget();
   }
 }
 
@@ -293,9 +389,7 @@ function renderSearchCount(count) {
 function renderHistory(matches, history, focusItem) {
   const focused = itemsGrid.querySelector('.keyboard-focused');
   if (history.length) {
-    const element = updateSection('browser-history', 'History', history.map(item => row(
-      `history:${item.url}`, 'browser-history', item.title, item.url, formatVisitTime(item.lastVisitTime)
-    )));
+    const element = updateSection('browser-history', 'History', historyRows(history));
     if (element.parentNode !== itemsGrid) {
       const before = sections.get('suggestions')?.element || sections.get('chrome-pages')?.element || null;
       itemsGrid.insertBefore(element, before);
@@ -304,8 +398,10 @@ function renderHistory(matches, history, focusItem) {
     sections.get('browser-history')?.element.remove();
     sections.delete('browser-history');
   }
-  renderSearchCount(matches.folders.length + matches.links.length + matches.chromePages.length + history.length);
-  if (focused) {
+  renderSearchCount(matches.folders.length + matches.links.length + matches.chromePages.length + Math.min(history.length, historyLimit));
+  if (!searchFocusWasNavigated && getNavigableItems().length && focusItem) {
+    focusItem(0);
+  } else if (focused) {
     const index = getNavigableItems().indexOf(focused);
     if (index >= 0) setFocusedItemIndex(index);
     else if (getNavigableItems().length && focusItem) focusItem(0);
@@ -313,13 +409,24 @@ function renderHistory(matches, history, focusItem) {
   }
 }
 
+export async function deleteHistoryUrl(url) {
+  await chrome.history.deleteUrl({ url });
+  displayedHistory = displayedHistory.filter(item => item.url !== url);
+  renderSearchResults(lastFocusItem, true);
+}
+
 export function renderSearchResults(focusItem, preserveFocus = false) {
   if (!isSearchMode) return;
+  if (!preserveFocus) searchFocusWasNavigated = false;
   lastFocusItem = focusItem;
   const thisSearchId = currentSearchId + 1;
   setCurrentSearchId(thisSearchId);
   const query = searchQuery.trim();
   const normalizedQuery = query.toLowerCase();
+  if (historyLimitQuery !== normalizedQuery) {
+    historyLimitQuery = normalizedQuery;
+    historyLimit = INITIAL_HISTORY_LIMIT;
+  }
   const isCurrent = () => isSearchMode && thisSearchId === currentSearchId;
   const matches = searchAllItems(query);
   // Keep matching history visible while a more specific query is in flight.
@@ -336,7 +443,7 @@ export function renderSearchResults(focusItem, preserveFocus = false) {
     });
   }
   if (query.length < MIN_HISTORY_QUERY_LENGTH) return;
-  void searchBrowserHistory(query).then(results => {
+  void searchBrowserHistory(query, historyLimit, isCurrent).then(results => {
     if (!isCurrent()) return;
     displayedHistory = results;
     displayedHistoryQuery = normalizedQuery;

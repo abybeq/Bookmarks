@@ -17,7 +17,8 @@ import {
   setInlineBookmarkDraftTitle, resetInlineBookmarkState
 } from './state.js';
 import { escapeHtml, showNotification, getFolderIconSvg, folderIconOptions } from './utils.js';
-import { searchFolderIcons } from './icon-search.js';
+import { deleteHistoryUrl } from './search.js';
+import { getIconOptionScrollDelta, searchFolderIcons } from './icon-search.js';
 import {
   getFaviconUrl, copyLinkToClipboard, showThemePicker, getBookmarks, getBookmarkById,
   getTotalBookmarkCount, isFolderOrDescendant, saveMoveForUndo,
@@ -29,10 +30,12 @@ import {
 // ============================================
 
 let deleteModalOverlay, deleteModalIcon, deleteModalTitle, deleteModalDescription;
-let deleteCancelBtn, deleteConfirmBtn;
+let deleteConfirmBtn;
 let itemsGrid, breadcrumb;
 let folderIconMenu = null;
 let folderIconMenuItemId = null;
+let folderIconMenuAnchorRect = null;
+let folderIconMenuOriginalIconName = null;
 let contextMenuAnchorElement = null;
 const FOLDER_ICON_GRID_COLUMNS = 6;
 
@@ -55,7 +58,6 @@ export function initInteractionElements() {
   deleteModalIcon = document.getElementById('delete-modal-icon');
   deleteModalTitle = document.getElementById('delete-modal-title');
   deleteModalDescription = document.getElementById('delete-modal-description');
-  deleteCancelBtn = document.getElementById('delete-cancel-btn');
   deleteConfirmBtn = document.getElementById('delete-confirm-btn');
 
   // Grid and breadcrumb
@@ -197,7 +199,7 @@ export function closeDeleteModal() {
 // CONTEXT MENU
 // ============================================
 
-export function initContextMenu(deleteItemFn, navigateToFolder) {
+export function initContextMenu(deleteItemFn, navigateToFolder, exitSearchMode) {
   // Open all menu item
   document.getElementById('context-open-all').addEventListener('click', async () => {
     // Capture itemId before any async work, as hideContextMenu() clears it during event propagation
@@ -213,16 +215,33 @@ export function initContextMenu(deleteItemFn, navigateToFolder) {
 
   // Copy link
   document.getElementById('context-copy-link').addEventListener('click', async () => {
-    // Capture itemId before any async work
+    // Capture the history URL before hiding the menu clears its anchor.
+    const historyUrl = contextMenuAnchorElement?.dataset.type === 'browser-history'
+      ? contextMenuAnchorElement.getAttribute('href') : null;
     const itemId = contextMenuItemId;
     hideContextMenu();
 
-    if (itemId) {
+    if (historyUrl) {
+      await copyLinkToClipboard(historyUrl);
+    } else if (itemId) {
       const item = await getBookmarkById(itemId);
       if (item && item.url) {
         await copyLinkToClipboard(item.url);
       }
     }
+  });
+
+  // Reveal a bookmark from search inside its parent folder.
+  document.getElementById('context-show-in-folder').addEventListener('click', async () => {
+    const itemId = contextMenuItemId;
+    hideContextMenu();
+
+    if (!itemId || !isSearchMode) return;
+    const item = await getBookmarkById(itemId);
+    if (!item?.url || !item.parentId) return;
+
+    exitSearchMode();
+    await navigateToFolder(item.parentId, true, false, true, item.id);
   });
 
   // Edit
@@ -255,11 +274,24 @@ export function initContextMenu(deleteItemFn, navigateToFolder) {
 
   // Delete
   document.getElementById('context-delete').addEventListener('click', async () => {
-    // Capture itemId and selection info before any async work
+    // Capture the URL before hiding the menu clears its anchor.
+    const historyUrl = contextMenuAnchorElement?.dataset.type === 'browser-history'
+      ? contextMenuAnchorElement.getAttribute('href') : null;
     const itemId = contextMenuItemId;
     const selectionSize = getSelectionSize();
     const selectedIds = getSelectedIdsArray();
     hideContextMenu();
+
+    if (historyUrl) {
+      try {
+        await deleteHistoryUrl(historyUrl);
+        showNotification('Deleted from history');
+      } catch (error) {
+        console.error('Failed to delete history URL:', error);
+        showNotification('Could not delete from history');
+      }
+      return;
+    }
 
     if (selectionSize > 1 && itemId && hasSelection(itemId)) {
       openDeleteModalMultiple(selectedIds);
@@ -292,9 +324,12 @@ export function initContextMenu(deleteItemFn, navigateToFolder) {
   });
 
   if (folderIconMenu) {
+    document.addEventListener('keydown', redirectFolderIconTypingToSearch, true);
+
     folderIconMenu.addEventListener('input', (e) => {
       if (!e.target.classList.contains('folder-icon-search')) return;
       renderFolderIconOptions(e.target.value);
+      if (folderIconMenuAnchorRect) positionFolderIconMenu(folderIconMenuAnchorRect);
     });
 
     folderIconMenu.addEventListener('click', async (e) => {
@@ -303,6 +338,20 @@ export function initContextMenu(deleteItemFn, navigateToFolder) {
       if (!option || !folderIconMenuItemId) return;
 
       await applyFolderIconOption(option);
+    });
+
+    folderIconMenu.addEventListener('pointerover', (e) => {
+      const option = e.target.closest('.folder-icon-option');
+      previewFolderIconOption(option || folderIconMenu.querySelector('.folder-icon-option.active'));
+    });
+
+    folderIconMenu.addEventListener('pointerleave', () => {
+      previewFolderIconOption(folderIconMenu.querySelector('.folder-icon-option.active'));
+    });
+
+    folderIconMenu.addEventListener('focusin', (e) => {
+      const option = e.target.closest('.folder-icon-option');
+      previewFolderIconOption(option || folderIconMenu.querySelector('.folder-icon-option.active'));
     });
 
     folderIconMenu.addEventListener('keydown', async (e) => {
@@ -372,6 +421,34 @@ export function initContextMenu(deleteItemFn, navigateToFolder) {
   });
 }
 
+function redirectFolderIconTypingToSearch(e) {
+  if (!folderIconMenu?.classList.contains('active')) return;
+
+  const searchInput = folderIconMenu.querySelector('.folder-icon-search');
+  if (!searchInput || e.target === searchInput) return;
+
+  const hasModifier = e.metaKey || e.ctrlKey || e.altKey;
+  const isPrintableCharacter = e.key.length === 1 && !hasModifier && !e.isComposing;
+  if (!isPrintableCharacter && e.key !== 'Backspace') return;
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  searchInput.focus({ preventScroll: true });
+
+  const selectionStart = searchInput.selectionStart ?? searchInput.value.length;
+  const selectionEnd = searchInput.selectionEnd ?? selectionStart;
+
+  if (isPrintableCharacter) {
+    searchInput.setRangeText(e.key, selectionStart, selectionEnd, 'end');
+  } else if (selectionStart !== selectionEnd) {
+    searchInput.setRangeText('', selectionStart, selectionEnd, 'end');
+  } else if (selectionStart > 0) {
+    searchInput.setRangeText('', selectionStart - 1, selectionStart, 'end');
+  }
+
+  searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 async function createFolderFromSelectedLinks() {
   const selectedIds = getSelectedIdsArray();
   const selectedBookmarks = [];
@@ -432,18 +509,24 @@ export async function showContextMenu(x, y, itemId, anchorElement = null) {
   setContextMenuItemId(itemId);
   contextMenuAnchorElement = anchorElement;
 
-  const item = await getBookmarkById(itemId);
+  const isHistory = anchorElement?.dataset.type === 'browser-history';
+  const item = isHistory ? null : await getBookmarkById(itemId);
   const isFolder = item && !item.url;
 
   const openAllBtn = document.getElementById('context-open-all');
   const createFolderBtn = document.getElementById('context-create-folder');
   const copyLinkBtn = document.getElementById('context-copy-link');
+  const showInFolderBtn = document.getElementById('context-show-in-folder');
   const exportBtn = document.getElementById('context-export');
   const editBtn = document.getElementById('context-edit');
   const changeIconBtn = document.getElementById('context-change-icon');
   const deleteBtn = document.getElementById('context-delete');
 
-  if (isMultiSelect) {
+  if (isHistory) {
+    for (const button of contextMenu.querySelectorAll('.context-menu-item')) {
+      button.style.display = button === copyLinkBtn || button === deleteBtn ? 'flex' : 'none';
+    }
+  } else if (isMultiSelect) {
     const selectedIds = getSelectedIdsArray();
     let hasLinks = false;
     let linksOnly = true;
@@ -461,6 +544,7 @@ export async function showContextMenu(x, y, itemId, anchorElement = null) {
     openAllBtn.style.display = hasLinks ? 'flex' : 'none';
     createFolderBtn.style.display = linksOnly ? 'flex' : 'none';
     copyLinkBtn.style.display = 'none';
+    showInFolderBtn.style.display = 'none';
     exportBtn.textContent = 'Export';
     exportBtn.style.display = 'flex';
     editBtn.textContent = 'Edit';
@@ -473,6 +557,7 @@ export async function showContextMenu(x, y, itemId, anchorElement = null) {
     openAllBtn.style.display = 'none';
     createFolderBtn.style.display = 'none';
     copyLinkBtn.style.display = 'flex';
+    showInFolderBtn.style.display = isSearchMode ? 'flex' : 'none';
     exportBtn.style.display = 'none';
     editBtn.textContent = 'Edit';
     editBtn.style.display = 'flex';
@@ -485,6 +570,7 @@ export async function showContextMenu(x, y, itemId, anchorElement = null) {
     openAllBtn.style.display = folderHasLinks ? 'flex' : 'none';
     createFolderBtn.style.display = 'none';
     copyLinkBtn.style.display = 'none';
+    showInFolderBtn.style.display = 'none';
     exportBtn.style.display = 'none';
     editBtn.textContent = 'Rename';
     editBtn.style.display = 'flex';
@@ -494,6 +580,7 @@ export async function showContextMenu(x, y, itemId, anchorElement = null) {
     openAllBtn.style.display = 'none';
     createFolderBtn.style.display = 'none';
     copyLinkBtn.style.display = 'none';
+    showInFolderBtn.style.display = 'none';
     exportBtn.style.display = 'none';
     editBtn.textContent = 'Edit';
     editBtn.style.display = 'flex';
@@ -522,12 +609,18 @@ function updateVisibleFolderIcons(folderId, iconName) {
     });
 }
 
+function previewFolderIconOption(option) {
+  if (!option || !folderIconMenuItemId) return;
+  updateVisibleFolderIcons(folderIconMenuItemId, option.dataset.iconName);
+}
+
 async function applyFolderIconOption(option) {
   if (!option || !folderIconMenuItemId) return;
 
   const folderId = folderIconMenuItemId;
   const iconName = option.dataset.iconName;
   const saved = await setFolderIconName(folderId, iconName);
+  if (saved) folderIconMenuOriginalIconName = iconName;
   hideContextMenu();
 
   if (saved) {
@@ -595,11 +688,15 @@ function showFolderIconMenu(anchorRect, folderId) {
   if (!folderIconMenu) return;
 
   folderIconMenuItemId = folderId;
+  folderIconMenuAnchorRect = anchorRect;
+  folderIconMenuOriginalIconName = getFolderIconName(folderId);
   folderIconMenu.innerHTML = `
-    <div class="folder-icon-search-container">
-      <input class="folder-icon-search" type="search" placeholder="Search icons" autocomplete="off" spellcheck="false">
+    <div class="folder-icon-menu-content">
+      <div class="folder-icon-search-container">
+        <input class="folder-icon-search" type="search" placeholder="Search icons" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="folder-icon-grid"></div>
     </div>
-    <div class="folder-icon-grid"></div>
   `;
   renderFolderIconOptions('');
 
@@ -628,6 +725,9 @@ function renderFolderIconOptions(query) {
 
   if (filteredIcons.length === 0) {
     grid.innerHTML = '<div class="folder-icon-empty">No icons</div>';
+    if (folderIconMenuOriginalIconName) {
+      updateVisibleFolderIcons(folderIconMenuItemId, folderIconMenuOriginalIconName);
+    }
     return;
   }
 
@@ -650,9 +750,9 @@ function renderFolderIconOptions(query) {
     `;
   }).join('');
 
-  if (!grid.querySelector('.folder-icon-option.active')) {
-    setActiveFolderIconOption(grid.querySelector('.folder-icon-option'));
-  }
+  const activeOption = grid.querySelector('.folder-icon-option.active');
+  if (activeOption) previewFolderIconOption(activeOption);
+  else setActiveFolderIconOption(grid.querySelector('.folder-icon-option'));
 }
 
 function moveFolderIconKeyboardSelection(key) {
@@ -685,9 +785,19 @@ function setActiveFolderIconOption(option, shouldFocus = false) {
     iconOption.tabIndex = isActive ? 0 : -1;
   });
 
-  option.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  previewFolderIconOption(option);
+
   if (shouldFocus) {
     option.focus({ preventScroll: true });
+  }
+
+  const scrollViewport = option.closest('.folder-icon-menu-content');
+  if (scrollViewport) {
+    const scrollDelta = getIconOptionScrollDelta(
+      option.getBoundingClientRect(),
+      scrollViewport.getBoundingClientRect()
+    );
+    if (scrollDelta !== 0) scrollViewport.scrollTop += scrollDelta;
   }
 }
 
@@ -732,9 +842,18 @@ export function hideContextMenu() {
     bodyContextMenu.classList.remove('active');
   }
   if (folderIconMenu) {
+    if (
+      folderIconMenu.classList.contains('active') &&
+      folderIconMenuItemId &&
+      folderIconMenuOriginalIconName
+    ) {
+      updateVisibleFolderIcons(folderIconMenuItemId, folderIconMenuOriginalIconName);
+    }
     folderIconMenu.classList.remove('active');
     folderIconMenu.classList.remove('above', 'below');
     folderIconMenuItemId = null;
+    folderIconMenuAnchorRect = null;
+    folderIconMenuOriginalIconName = null;
   }
 }
 
@@ -1466,6 +1585,6 @@ export async function handleBreadcrumbDrop(e) {
 
 export function getModalElements() {
   return {
-    deleteModalOverlay, deleteCancelBtn, deleteConfirmBtn
+    deleteModalOverlay, deleteConfirmBtn
   };
 }

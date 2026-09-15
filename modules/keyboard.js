@@ -7,10 +7,13 @@ import {
   currentFolderId, isSearchMode, searchQuery, focusedItemIndex, setFocusedItemIndex,
   originalSearchQuery, ROOT_FOLDER_ID
 } from './state.js';
-import { isUrl, navigateToUrl, performDefaultSearch } from './utils.js';
+import { isUrl, navigateToUrl, openAskTarget } from './utils.js';
 import { getFaviconUrl, copyLinkToClipboard, getBookmarkById } from './storage.js';
 import { getFolderById } from './navigation.js';
-import { getNavigableItems, setSearchIcon, setSearchResultType } from './search.js';
+import {
+  getNavigableItems, setSearchIcon, setSearchResultType, showGoogleSearchTarget, showAskTarget, showMoreHistory,
+  markSearchFocusNavigated
+} from './search.js';
 
 // DOM elements
 let searchInput = null;
@@ -101,6 +104,7 @@ export function focusItem(index, updateInputWithSuggestion = false) {
   const navigableItems = getNavigableItems();
   if (navigableItems.length === 0) return;
 
+  if (isSearchMode && updateInputWithSuggestion) markSearchFocusNavigated();
   clearItemFocus();
 
   if (index < 0) index = 0;
@@ -122,16 +126,29 @@ export function focusItem(index, updateInputWithSuggestion = false) {
   keepFocusedItemVisible(item);
 }
 
+export function focusItemById(itemId) {
+  const index = getNavigableItems().findIndex(item => item.dataset.itemId === String(itemId));
+  if (index < 0) return false;
+
+  focusItem(index);
+  return true;
+}
+
 export function updateSearchIconForFocusedItem(item) {
   if (!isSearchMode) return;
 
   const itemType = item.dataset.type;
   setSearchResultType(itemType);
 
+  if (itemType === 'history-more') {
+    setSearchIcon('history');
+    return;
+  }
+
   if (item.classList.contains('url-item')) {
     const url = item.dataset.url;
     if (url) {
-      setSearchIcon('favicon', getFaviconUrl(url));
+      setSearchIcon('website', url);
     } else {
       setSearchIcon('globe');
     }
@@ -174,7 +191,7 @@ export function updateSearchIconForFocusedItem(item) {
   }
 
   if (item.classList.contains('suggestion-item')) {
-    setSearchIcon('search');
+    showAskTarget(item.dataset.provider);
     return;
   }
 
@@ -185,11 +202,26 @@ export function focusNextItem() {
   const navigableItems = getNavigableItems();
   if (navigableItems.length === 0) return;
 
-  if (focusedItemIndex < 0) {
+  if (isSearchMode && focusedItemIndex === -2) {
+    focusAskTarget(-1);
+  } else if (focusedItemIndex < 0) {
     focusItem(0, true);
   } else if (focusedItemIndex < navigableItems.length - 1) {
     focusItem(focusedItemIndex + 1, true);
   }
+}
+
+// Negative indexes represent Ask targets in the input above the results:
+// -1 = Google, -2 = ChatGPT. Down reverses the same path back to results.
+function focusAskTarget(index) {
+  markSearchFocusNavigated();
+  searchInput.value = originalSearchQuery;
+  clearItemFocus();
+  setFocusedItemIndex(index);
+  searchInput.focus();
+  searchInput.selectionStart = searchInput.selectionEnd = originalSearchQuery.length;
+  showAskTarget(index === -2 ? 'chatgpt' : 'google');
+  window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 export function focusPreviousItem() {
@@ -198,22 +230,37 @@ export function focusPreviousItem() {
 
   if (focusedItemIndex <= 0) {
     if (isSearchMode && originalSearchQuery !== undefined && searchInput) {
-      searchInput.value = originalSearchQuery;
-      clearItemFocus();
-      setFocusedItemIndex(-1);
-      searchInput.focus();
-      searchInput.selectionStart = searchInput.selectionEnd = originalSearchQuery.length;
-      if (originalSearchQuery.trim()) {
-        const queryIsUrl = isUrl(originalSearchQuery);
-        setSearchIcon(queryIsUrl ? 'globe' : 'search');
-      } else {
-        setSearchIcon('search');
-      }
-      setSearchResultType();
+      focusAskTarget(focusedItemIndex === 0 ? -1 : -2);
     }
   } else {
     focusItem(focusedItemIndex - 1, true);
   }
+}
+
+export function focusAdjacentGroup(direction) {
+  if (focusedItemIndex < 0) return false;
+
+  const navigableItems = getNavigableItems();
+  const currentItem = navigableItems[focusedItemIndex];
+  const currentSection = currentItem?.closest('.list-section');
+  if (!currentSection) return false;
+
+  const firstItemIndexes = [];
+  let previousSection = null;
+  navigableItems.forEach((item, index) => {
+    const section = item.closest('.list-section');
+    if (section && section !== previousSection) {
+      firstItemIndexes.push({ section, index });
+      previousSection = section;
+    }
+  });
+
+  const currentSectionIndex = firstItemIndexes.findIndex(({ section }) => section === currentSection);
+  const target = firstItemIndexes[currentSectionIndex + direction];
+  if (!target) return false;
+
+  focusItem(target.index, true);
+  return true;
 }
 
 export async function activateFocusedItem(openInNewTab = false) {
@@ -223,6 +270,11 @@ export async function activateFocusedItem(openInNewTab = false) {
   const item = navigableItems[focusedItemIndex];
   const itemId = item.dataset.itemId;
   const itemType = item.dataset.type;
+
+  if (itemType === 'history-more') {
+    await showMoreHistory(true);
+    return;
+  }
 
   if (item.classList.contains('url-item')) {
     const url = item.dataset.url;
@@ -235,7 +287,7 @@ export async function activateFocusedItem(openInNewTab = false) {
   if (item.classList.contains('suggestion-item')) {
     const suggestion = item.dataset.suggestion;
     if (suggestion) {
-      await performDefaultSearch(suggestion, openInNewTab);
+      openAskTarget(suggestion, item.dataset.provider, openInNewTab);
     }
     return;
   }
@@ -344,9 +396,10 @@ export function initKeyboardShortcuts() {
 
       // Navigate to parent folder
       if (currentFolderId !== ROOT_FOLDER_ID && navigateToFolderCallback) {
+        const folderIdToRestore = currentFolderId;
         const currentFolder = await getFolderById(currentFolderId);
         const parentFolderId = currentFolder ? currentFolder.parentId : ROOT_FOLDER_ID;
-        navigateToFolderCallback(parentFolderId || ROOT_FOLDER_ID, true, true);
+        navigateToFolderCallback(parentFolderId || ROOT_FOLDER_ID, true, true, false, folderIdToRestore);
       }
     }
 
@@ -478,7 +531,9 @@ export function initKeyboardShortcuts() {
 
       if (!isOtherInputFocused) {
         e.preventDefault();
-        if (e.key === 'ArrowDown') {
+        if (e.metaKey && focusedItemIndex >= 0) {
+          focusAdjacentGroup(e.key === 'ArrowDown' ? 1 : -1);
+        } else if (e.key === 'ArrowDown') {
           focusNextItem();
         } else {
           focusPreviousItem();
@@ -502,9 +557,10 @@ export function initKeyboardShortcuts() {
         }
 
         if (currentFolderId !== ROOT_FOLDER_ID && navigateToFolderCallback) {
+          const folderIdToRestore = currentFolderId;
           const currentFolder = await getFolderById(currentFolderId);
           const parentFolderId = currentFolder ? currentFolder.parentId : ROOT_FOLDER_ID;
-          navigateToFolderCallback(parentFolderId || ROOT_FOLDER_ID, true, true);
+          navigateToFolderCallback(parentFolderId || ROOT_FOLDER_ID, true, true, false, folderIdToRestore);
         }
       }
     }
@@ -527,7 +583,7 @@ export function initKeyboardShortcuts() {
         if (isSearchMode && searchQuery.trim() && e.key === 'Enter') {
           e.preventDefault();
           const queryToSearch = searchQuery.trim();
-          await performDefaultSearch(queryToSearch);
+          openAskTarget(queryToSearch, focusedItemIndex === -2 ? 'chatgpt' : 'google', e.metaKey || e.ctrlKey);
           return;
         }
       }
@@ -563,8 +619,10 @@ export function initKeyboardShortcuts() {
     }
   });
 
-  // Click outside search bar to exit
+  // Menu actions belong to the results, even after the menu is hidden.
   document.addEventListener('click', (e) => {
+    if (e.target.closest('#context-menu')) return;
+
     const searchBar = document.getElementById('search-bar');
     if (isSearchMode && searchBar && !searchBar.contains(e.target) && itemsGrid && !itemsGrid.contains(e.target)) {
       if (exitSearchModeCallback) exitSearchModeCallback();

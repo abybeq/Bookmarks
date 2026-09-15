@@ -16,3 +16,20 @@ export function searchFolderIcons(query) {
     words.every(word => searchWords.get(name).some(term => term.startsWith(word)))
   );
 }
+
+export function getIconOptionScrollDelta(
+  optionRect,
+  viewportRect,
+  bottomInset = 8,
+  topInset = 48
+) {
+  const bottomBoundary = viewportRect.bottom - bottomInset;
+  if (optionRect.bottom > bottomBoundary) {
+    return optionRect.bottom - bottomBoundary;
+  }
+  const topBoundary = viewportRect.top + topInset;
+  if (optionRect.top < topBoundary) {
+    return optionRect.top - topBoundary;
+  }
+  return 0;
+}
