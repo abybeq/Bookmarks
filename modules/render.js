@@ -1,35 +1,22 @@
 // ============================================
-// RENDER MODULE
+// RENDER MODULE (Chrome Native Bookmarks)
 // ============================================
 
 import {
-  items,
-  currentFolderId,
-  isInMoveMode,
-  movingItemIds,
-  UNSORTED_FOLDER_ID,
-  inlineFolderMode,
-  inlineFolderTargetId,
-  inlineFolderParentId,
-  inlineFolderDraft,
-  inlineFolderSaving,
-  setInlineFolderDraft,
-  setInlineFolderSaving,
-  resetInlineFolderState,
-  inlineBookmarkMode,
-  inlineBookmarkTargetId,
-  inlineBookmarkParentId,
-  inlineBookmarkDraftUrl,
-  inlineBookmarkDraftTitle,
-  inlineBookmarkSaving,
-  setInlineBookmarkDraftUrl,
-  setInlineBookmarkDraftTitle,
-  setInlineBookmarkSaving,
+  currentFolderId, isSearchMode, inlineFolderMode, inlineFolderTargetId, inlineFolderParentId,
+  inlineFolderDraft, inlineFolderSaving, setInlineFolderDraft, setInlineFolderSaving,
+  resetInlineFolderState, inlineBookmarkMode, inlineBookmarkTargetId, inlineBookmarkParentId,
+  inlineBookmarkDraftUrl, inlineBookmarkDraftTitle, inlineBookmarkSaving,
+  setInlineBookmarkDraftUrl, setInlineBookmarkDraftTitle, setInlineBookmarkSaving,
   resetInlineBookmarkState
 } from './state.js';
-import { escapeHtml, getFolderIconSvg, getInboxIconSvg, generateId, normalizeUrl, getTitleFromUrl, isUrl } from './utils.js';
-import { getFaviconUrl, preloadVisibleFavicons, saveItems, saveStateForUndo } from './storage.js';
-import { getItemsForFolder, getLinkCountInFolder, getFolderDescendantCount, isFolderOrDescendant, getTotalBookmarkCount, renderBreadcrumb } from './navigation.js';
+import { escapeHtml, getFolderIconSvg, normalizeUrl, getTitleFromUrl, isUrl } from './utils.js';
+import {
+  getFaviconHtml, getBookmarks, createBookmark, createFolder, updateBookmark,
+  getTotalBookmarkCount, getLinkCountInFolder, getFolderDescendantCount, saveCreateForUndo,
+  saveEditForUndo, getFolderIconName
+} from './storage.js';
+import { renderBreadcrumb } from './navigation.js';
 
 // DOM elements
 let itemsGrid = null;
@@ -43,51 +30,46 @@ export function initRenderElements() {
 // MAIN RENDER FUNCTION
 // ============================================
 
-export function renderItems() {
-  const folderItems = getItemsForFolder(currentFolderId);
-  
-  // Separate folders and links
-  let folders = folderItems.filter(item => item.type === 'folder');
-  const links = folderItems.filter(item => item.type === 'link');
-  
-  // Filter out Unsorted folder and folders being moved when in move mode
-  if (isInMoveMode()) {
-    folders = folders.filter(f => f.id !== UNSORTED_FOLDER_ID && !movingItemIds.includes(f.id));
-  }
-  
-  renderListView(folders, links);
-  
-  // Pre-load favicons for visible items
-  if (typeof requestIdleCallback !== 'undefined') {
-    requestIdleCallback(() => preloadVisibleFavicons(currentFolderId));
-  } else {
-    setTimeout(() => preloadVisibleFavicons(currentFolderId), 100);
-  }
+let renderVersion = 0;
+
+export async function renderItems() {
+  const version = ++renderVersion;
+  const folderId = currentFolderId;
+  const isCurrent = () => version === renderVersion && folderId === currentFolderId && !isSearchMode;
+  // Coalesce synchronous refresh requests before reading browser data.
+  await Promise.resolve();
+  if (!isCurrent()) return;
+  const bookmarks = await getBookmarks(folderId);
+  if (!isCurrent()) return;
+
+  // Separate folders and links based on url property
+  const folders = bookmarks.filter(item => !item.url);
+  const links = bookmarks.filter(item => item.url);
+
+  await renderListView(folders, links, isCurrent);
 }
 
 // ============================================
 // LIST VIEW RENDERING
 // ============================================
 
-export function renderListView(folders, links) {
+export async function renderListView(folders, links, isCurrent = () => true) {
   if (!itemsGrid) {
     itemsGrid = document.getElementById('items-grid');
   }
-  
+
   // Check inline mode states first (before empty state check)
-  const inMoveMode = isInMoveMode();
   const isInlineCreateActive = inlineFolderMode === 'create' && inlineFolderParentId === currentFolderId;
   const inlineRenameId = inlineFolderMode === 'rename' ? inlineFolderTargetId : null;
   const isInlineBookmarkCreateActive = inlineBookmarkMode === 'create' && inlineBookmarkParentId === currentFolderId;
   const inlineBookmarkEditId = inlineBookmarkMode === 'edit' ? inlineBookmarkTargetId : null;
-  
-  // Check if there are 0 bookmarks AND 0 folders total - show empty state
-  // BUT skip empty state if inline create mode is active (user clicked add bookmark/folder)
-  const totalBookmarks = getTotalBookmarkCount();
-  const totalFolders = items.filter(item => item.type === 'folder' && item.id !== UNSORTED_FOLDER_ID).length;
-  const hasAnyItems = totalBookmarks > 0 || totalFolders > 0;
+
+  // Check if there are any items
+  const totalBookmarks = await getTotalBookmarkCount();
+  if (!isCurrent()) return;
+  const hasAnyItems = folders.length > 0 || links.length > 0 || totalBookmarks > 0;
   const shouldSkipEmptyState = isInlineCreateActive || isInlineBookmarkCreateActive;
-  
+
   if (!hasAnyItems && !shouldSkipEmptyState) {
     itemsGrid.className = 'list-view empty-state-container';
     itemsGrid.innerHTML = `
@@ -98,43 +80,21 @@ export function renderListView(folders, links) {
     `;
     return;
   }
-  
-  itemsGrid.className = 'list-view';
-  
+
   let listHtml = '';
-  
-  // Separate Unsorted folder from other folders
-  const unsortedFolder = folders.find(f => f.id === UNSORTED_FOLDER_ID);
-  const regularFolders = folders.filter(f => f.id !== UNSORTED_FOLDER_ID);
-  
-  // Unsorted folder section
-  if (unsortedFolder && !inMoveMode) {
-    const nestedCount = getFolderDescendantCount(unsortedFolder.id);
-    const linkCount = getLinkCountInFolder(unsortedFolder.id);
-    const metaText = nestedCount > 0 ? `${nestedCount} ⋅ ${linkCount}` : `${linkCount}`;
-    listHtml += '<div class="list-section list-section-unsorted">';
-    listHtml += `
-      <div class="list-item" draggable="false" data-item-id="${unsortedFolder.id}" data-type="folder" data-unsorted="true">
-        <div class="list-item-icon">
-          ${getInboxIconSvg()}
-        </div>
-        <span class="list-item-title">${escapeHtml(unsortedFolder.title)}</span>
-        <span class="list-item-meta">${metaText}</span>
-      </div>
-    `;
-    listHtml += '</div>';
-  }
-  
-  // Regular folders section
-  const shouldRenderRegularSection = regularFolders.length > 0 || isInlineCreateActive;
-  
-  if (shouldRenderRegularSection) {
+
+  // Folders section
+  const shouldRenderFolderSection = folders.length > 0 || isInlineCreateActive;
+
+  if (shouldRenderFolderSection) {
     listHtml += '<div class="list-section">';
-    listHtml += regularFolders.map(item => {
-      const nestedCount = getFolderDescendantCount(item.id);
-      const linkCount = getLinkCountInFolder(item.id);
+
+    // Use Promise.all to fetch folder counts in parallel
+    const folderHtmlPromises = folders.map(async (item) => {
+      const nestedCount = await getFolderDescendantCount(item.id);
+      const linkCount = await getLinkCountInFolder(item.id);
       const metaText = nestedCount > 0 ? `${nestedCount} ⋅ ${linkCount}` : `${linkCount}`;
-      
+
       if (inlineRenameId === item.id) {
         return renderInlineFolderInput({
           mode: 'rename',
@@ -142,42 +102,33 @@ export function renderListView(folders, links) {
           folderId: item.id
         });
       }
-      
-      // Show "Move here" button on folders when in move mode
-      let moveHereBtn = '';
-      if (inMoveMode) {
-        const isInvalidTarget = movingItemIds.some(movingId => {
-          const movingItem = items.find(i => i.id === movingId);
-          return movingItem && movingItem.type === 'folder' && isFolderOrDescendant(movingId, item.id);
-        });
-        if (!isInvalidTarget) {
-          moveHereBtn = `<button class="list-item-move-here-btn" data-folder-id="${item.id}">Move here</button>`;
-        }
-      }
+
       return `
-        <div class="list-item draggable${inMoveMode ? ' move-mode' : ''}" draggable="${!inMoveMode}" data-item-id="${item.id}" data-type="folder">
+        <div class="list-item draggable" draggable="true" data-item-id="${item.id}" data-type="folder">
           <div class="list-item-icon">
-            ${getFolderIconSvg()}
+            ${getFolderIconSvg(getFolderIconName(item.id))}
           </div>
           <span class="list-item-title">${escapeHtml(item.title)}</span>
-          ${moveHereBtn}
           <span class="list-item-meta">${metaText}</span>
         </div>
       `;
-    }).join('');
-    
+    });
+
+    const folderHtmls = await Promise.all(folderHtmlPromises);
+    listHtml += folderHtmls.join('');
+
     if (isInlineCreateActive) {
       listHtml += renderInlineFolderInput({
         mode: 'create',
         value: inlineFolderDraft
       });
     }
-    
+
     listHtml += '</div>';
   }
-  
-  // Links section - don't show in move mode
-  const shouldRenderLinksSection = !inMoveMode && (links.length > 0 || isInlineBookmarkCreateActive || inlineBookmarkEditId);
+
+  // Links section
+  const shouldRenderLinksSection = links.length > 0 || isInlineBookmarkCreateActive || inlineBookmarkEditId;
   if (shouldRenderLinksSection) {
     listHtml += '<div class="list-section">';
     listHtml += links.map(item => {
@@ -190,27 +141,18 @@ export function renderListView(folders, links) {
           parentId: item.parentId
         });
       }
-      // Show move button for links in Unsorted folder
-      const showUnsortedActions = currentFolderId === UNSORTED_FOLDER_ID;
-      const actionButtonsHtml = showUnsortedActions ? `
-        <div class="list-item-actions">
-          <button class="list-item-action-btn list-item-delete-btn" data-item-id="${item.id}">Delete</button>
-          <button class="list-item-action-btn list-item-move-btn" data-item-id="${item.id}">Move</button>
-        </div>
-      ` : '';
-      
+
       return `
         <a class="list-item draggable" draggable="true" href="${escapeHtml(item.url)}" data-item-id="${item.id}" data-type="link">
           <div class="list-item-icon">
-            <img src="${getFaviconUrl(item.url)}" alt="" loading="lazy">
+            ${getFaviconHtml(item.url)}
           </div>
           <span class="list-item-title">${escapeHtml(item.title)}</span>
           <span class="list-item-url">${escapeHtml(item.url)}</span>
-          ${actionButtonsHtml}
         </a>
       `;
     }).join('');
-    
+
     if (isInlineBookmarkCreateActive) {
       listHtml += renderInlineBookmarkInput({
         mode: 'create',
@@ -221,7 +163,9 @@ export function renderListView(folders, links) {
     }
     listHtml += '</div>';
   }
-  
+
+  if (!isCurrent()) return;
+  itemsGrid.className = 'list-view';
   itemsGrid.innerHTML = listHtml;
   attachInlineFolderInputHandlers();
   attachInlineBookmarkInputHandlers();
@@ -233,7 +177,7 @@ function renderInlineFolderInput({ mode, value = '', folderId = '' }) {
   return `
     <div class="list-item inline-folder-item" data-inline-mode="${mode}" ${folderId ? `data-folder-id="${folderId}"` : ''}>
       <div class="list-item-icon">
-        ${getFolderIconSvg()}
+        ${getFolderIconSvg(folderId ? getFolderIconName(folderId) : 'folder')}
       </div>
       <input
         type="text"
@@ -249,32 +193,15 @@ function renderInlineFolderInput({ mode, value = '', folderId = '' }) {
 }
 
 async function commitInlineFolderCreate(title, parentId) {
-  saveStateForUndo();
-  const siblingFolders = items.filter(item => item.parentId === parentId && item.type === 'folder');
-  const maxOrder = siblingFolders.length > 0
-    ? Math.max(...siblingFolders.map(f => f.order ?? 0))
-    : -1;
-  
-  const newFolder = {
-    id: generateId(),
-    type: 'folder',
-    title: title,
-    parentId,
-    order: maxOrder + 1
-  };
-  
-  items.push(newFolder);
-  await saveItems();
+  const folder = await createFolder(parentId, title);
+  if (folder) {
+    saveCreateForUndo(folder);
+  }
 }
 
 async function commitInlineFolderRename(folderId, newTitle) {
-  const folder = items.find(i => i.id === folderId);
-  if (!folder) return;
-  if (folder.title === newTitle) return;
-  
-  saveStateForUndo();
-  folder.title = newTitle;
-  await saveItems();
+  await saveEditForUndo(folderId);
+  await updateBookmark(folderId, newTitle);
 }
 
 function attachInlineFolderInputHandlers() {
@@ -283,35 +210,35 @@ function attachInlineFolderInputHandlers() {
   if (!input) return;
   if (input.dataset.inlineBound === 'true') return;
   input.dataset.inlineBound = 'true';
-  
+
   input.focus();
   input.select();
-  
+
   const mode = input.dataset.mode;
   const folderId = input.dataset.folderId || null;
   const parentId = input.dataset.parentId || currentFolderId;
   let settled = false;
-  
+
   const cleanup = () => {
     input.removeEventListener('keydown', onKeyDown);
     input.removeEventListener('blur', onBlur);
     input.removeEventListener('input', onInput);
   };
-  
+
   const finish = async (shouldSave) => {
     if (settled || inlineFolderSaving) return;
     settled = true;
     setInlineFolderSaving(true);
     cleanup();
-    
+
     const value = input.value.trim();
     const capturedMode = mode;
     const capturedFolderId = folderId;
     const capturedParentId = parentId;
-    
+
     // Clear inline UI before any async work to avoid duplicate renders
     resetInlineFolderState();
-    
+
     try {
       if (shouldSave && value) {
         if (capturedMode === 'create') {
@@ -327,7 +254,7 @@ function attachInlineFolderInputHandlers() {
       renderBreadcrumb();
     }
   };
-  
+
   const onKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -338,10 +265,10 @@ function attachInlineFolderInputHandlers() {
       finish(false);
     }
   };
-  
+
   const onBlur = () => finish(true);
   const onInput = () => setInlineFolderDraft(input.value);
-  
+
   input.addEventListener('keydown', onKeyDown);
   input.addEventListener('blur', onBlur);
   input.addEventListener('input', onInput);
@@ -379,43 +306,21 @@ function getInlineBookmarkIconHtml(urlValue = '') {
   const trimmed = (urlValue || '').trim();
   if (trimmed && isUrl(trimmed)) {
     const normalized = normalizeUrl(trimmed);
-    return `<img class="inline-bookmark-favicon" src="${escapeHtml(getFaviconUrl(normalized))}" alt="" loading="lazy">`;
+    return `<span class="inline-bookmark-favicon">${getFaviconHtml(normalized)}</span>`;
   }
-  return `<img class="inline-bookmark-favicon" src="icons/bookmark.svg" alt="Bookmark">`;
+  return `<span class="inline-bookmark-favicon">${getFaviconHtml('')}</span>`;
 }
 
 async function commitInlineBookmarkCreate(url, title, parentId) {
-  saveStateForUndo();
-  const siblingLinks = items.filter(item => item.parentId === parentId && item.type === 'link');
-  const maxOrder = siblingLinks.length > 0
-    ? Math.max(...siblingLinks.map(link => link.order ?? 0))
-    : -1;
-
-  const newBookmark = {
-    id: generateId(),
-    type: 'link',
-    title,
-    url,
-    parentId,
-    order: maxOrder + 1
-  };
-
-  items.push(newBookmark);
-  await saveItems();
+  const bookmark = await createBookmark(parentId, title, url);
+  if (bookmark) {
+    saveCreateForUndo(bookmark);
+  }
 }
 
 async function commitInlineBookmarkEdit(bookmarkId, url, title) {
-  const bookmark = items.find(i => i.id === bookmarkId && i.type === 'link');
-  if (!bookmark) return;
-  const nextTitle = title || getTitleFromUrl(url);
-  const urlChanged = bookmark.url !== url;
-  const titleChanged = bookmark.title !== nextTitle;
-  if (!urlChanged && !titleChanged) return;
-
-  saveStateForUndo();
-  bookmark.url = url;
-  bookmark.title = nextTitle;
-  await saveItems();
+  await saveEditForUndo(bookmarkId);
+  await updateBookmark(bookmarkId, title, url);
 }
 
 function attachInlineBookmarkInputHandlers() {
@@ -435,7 +340,11 @@ function attachInlineBookmarkInputHandlers() {
 
   const inputs = [urlInput, titleInput].filter(Boolean);
 
-  if (urlInput) {
+  // When editing, focus on title (name) field; when creating, focus on URL field
+  if (mode === 'edit' && titleInput) {
+    titleInput.focus();
+    titleInput.select();
+  } else if (urlInput) {
     urlInput.focus();
     urlInput.select();
   } else if (titleInput) {
@@ -528,10 +437,8 @@ function updateInlineBookmarkFavicon(iconImg, urlValue = '') {
   const trimmed = (urlValue || '').trim();
   if (trimmed && isUrl(trimmed)) {
     const normalized = normalizeUrl(trimmed);
-    iconImg.src = getFaviconUrl(normalized);
-    iconImg.alt = '';
+    iconImg.innerHTML = getFaviconHtml(normalized);
   } else {
-    iconImg.src = 'icons/bookmark.svg';
-    iconImg.alt = 'Bookmark';
+    iconImg.innerHTML = getFaviconHtml('');
   }
 }

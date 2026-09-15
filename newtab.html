@@ -4,136 +4,46 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>New Tab</title>
-  <link href="https://fonts.cdnfonts.com/css/geist-mono" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="icons/bookmark.svg">
+  <link rel="preload" href="fonts/geist-mono-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="modulepreload" href="main.js">
+  <link rel="modulepreload" href="modules/font-awesome.js">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="container">
     <!-- Breadcrumb navigation -->
     <nav class="breadcrumb" id="breadcrumb"></nav>
-    
+
+    <!-- Search result count replaces the breadcrumb while searching -->
+    <div class="search-results-count" id="search-results-count" aria-live="polite"></div>
+
     <!-- Search bar (hidden by default) -->
     <div class="search-bar" id="search-bar">
       <div class="search-icon-container" id="search-icon-container">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/>
-          <path d="M21 21l-4.35-4.35"/>
-        </svg>
+        <svg class="search-icon" viewBox="-85.33333333333331 -85.33333333333331 682.6666666666666 682.6666666666666" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg>
       </div>
       <input type="text" class="search-input" id="search-input" placeholder="Search...">
+      <span class="search-result-type" id="search-result-type" hidden></span>
     </div>
-    
+
     <!-- Items list -->
     <div class="list-view" id="items-grid"></div>
   </main>
 
-  <!-- Modal for adding links -->
-  <div class="modal-overlay" id="add-modal-overlay">
-    <div class="modal add-modal">
-      <div class="add-modal-header">
-        <h2 class="add-modal-title">Add bookmarks</h2>
-        <button type="button" class="add-modal-close" id="add-modal-close">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-      
-      <form id="add-form">
-        <div class="add-form-rows" id="add-form-rows">
-          <div class="add-form-inputs" data-row="0">
-            <input type="text" class="add-input add-address" placeholder="Address" data-row="0">
-            <input type="text" class="add-input add-name" placeholder="Name" data-row="0">
-          </div>
-        </div>
-        
-        <button type="submit" class="add-submit-btn" id="add-submit-btn" disabled>Add</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Modal for adding folders -->
-  <div class="modal-overlay" id="add-folder-modal-overlay">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 class="modal-title">Create folder</h2>
-        <button type="button" class="modal-close" id="add-folder-modal-close">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-      
-      <form id="add-folder-form">
-        <div class="form-group">
-          <input type="text" id="folder-name" placeholder="New Folder" required>
-        </div>
-        
-        <button type="submit" class="modal-action-btn btn-primary" id="add-folder-submit-btn">Create</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Modal for editing items -->
-  <div class="modal-overlay" id="edit-modal-overlay">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 class="modal-title" id="modal-title">Edit</h2>
-        <button type="button" class="modal-close" id="cancel-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-      
-      <form id="edit-form">
-        <input type="hidden" id="item-type" value="link">
-        <input type="hidden" id="item-id" value="">
-        
-        <div class="form-group">
-          <input type="text" id="item-title" placeholder="Name" required>
-        </div>
-        
-        <div class="form-group" id="url-group">
-          <input type="url" id="item-url" placeholder="https://youtube.com">
-        </div>
-        
-        <button type="submit" class="modal-action-btn btn-primary" id="submit-btn">Save</button>
-      </form>
-    </div>
-  </div>
-
   <!-- Delete confirmation modal -->
   <div class="modal-overlay" id="delete-modal-overlay">
-    <div class="modal modal-small">
-      <div class="modal-header">
-        <h2 class="modal-title">Delete folder</h2>
-        <button type="button" class="modal-close" id="delete-cancel-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+    <div class="modal modal-small" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" aria-describedby="delete-modal-description">
+      <div class="delete-modal-icon" id="delete-modal-icon" aria-hidden="true"></div>
+      <div class="delete-modal-copy">
+        <h2 class="modal-title" id="delete-modal-title">Delete folder?</h2>
+        <p class="modal-text" id="delete-modal-description">0 bookmarks will be deleted</p>
       </div>
-      <p class="modal-text">Are you sure you want to delete "<span id="delete-item-name"></span>"?</p>
       <button type="button" class="modal-action-btn btn-danger" id="delete-confirm-btn">Delete</button>
+      <button type="button" class="modal-close" id="delete-cancel-btn" aria-label="Close delete dialog">
+        <svg viewBox="-149.33333333333331 -85.33333333333331 682.6666666666666 682.6666666666666" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></svg>
+      </button>
     </div>
-  </div>
-
-  <!-- Move mode banner -->
-  <div class="move-banner" id="move-banner">
-    <button class="move-banner-dismiss" id="move-banner-dismiss">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-      </svg>
-    </button>
-    <div class="move-banner-icon" id="move-banner-icon"></div>
-    <span class="move-banner-text" id="move-banner-text">Move Link name to Home</span>
-    <button class="move-banner-action" id="move-banner-action">Move here</button>
   </div>
 
   <!-- Context menu for right-click on cards -->
@@ -141,11 +51,13 @@
     <button class="context-menu-item" id="context-open-all">Open all</button>
     <button class="context-menu-item" id="context-create-folder">Add folder</button>
     <button class="context-menu-item" id="context-copy-link">Copy link</button>
-    <button class="context-menu-item" id="context-move">Move</button>
     <button class="context-menu-item" id="context-export">Export</button>
     <button class="context-menu-item" id="context-edit">Edit</button>
+    <button class="context-menu-item" id="context-change-icon">Change icon</button>
     <button class="context-menu-item context-menu-item-danger" id="context-delete">Delete</button>
   </div>
+
+  <div class="context-menu folder-icon-menu" id="folder-icon-menu"></div>
 
   <!-- Context menu for right-click on body/background -->
   <div class="context-menu" id="body-context-menu">
@@ -159,109 +71,78 @@
     <div class="context-menu-separator"></div>
     <button class="context-menu-item" id="body-context-theme">Customize</button>
   </div>
-  
+
   <!-- Theme picker panel -->
   <div class="theme-picker" id="theme-picker">
     <div class="theme-picker-content">
       <div class="theme-options">
-        <button class="theme-option" data-theme="frost">
-          <div class="theme-preview theme-preview-frost">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="frost" aria-label="Default color">
+          <span class="theme-preview theme-preview-frost" aria-hidden="true"></span>
+          <span class="theme-name">Default color</span>
         </button>
-        <button class="theme-option" data-theme="default">
-          <div class="theme-preview theme-preview-default">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="default" aria-label="Grey default color">
+          <span class="theme-preview theme-preview-default" aria-hidden="true"></span>
+          <span class="theme-name">Grey default color</span>
         </button>
-        <button class="theme-option" data-theme="blue">
-          <div class="theme-preview theme-preview-blue">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="blue" aria-label="Blue">
+          <span class="theme-preview theme-preview-blue" aria-hidden="true"></span>
+          <span class="theme-name">Blue</span>
         </button>
-        <button class="theme-option" data-theme="lavender">
-          <div class="theme-preview theme-preview-lavender">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="lavender" aria-label="Cool grey">
+          <span class="theme-preview theme-preview-lavender" aria-hidden="true"></span>
+          <span class="theme-name">Cool grey</span>
         </button>
-        <button class="theme-option" data-theme="slate">
-          <div class="theme-preview theme-preview-slate">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="slate" aria-label="Grey">
+          <span class="theme-preview theme-preview-slate" aria-hidden="true"></span>
+          <span class="theme-name">Grey</span>
         </button>
-        <button class="theme-option" data-theme="mint">
-          <div class="theme-preview theme-preview-mint">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="mint" aria-label="Aqua">
+          <span class="theme-preview theme-preview-mint" aria-hidden="true"></span>
+          <span class="theme-name">Aqua</span>
         </button>
-        <button class="theme-option" data-theme="sage">
-          <div class="theme-preview theme-preview-sage">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="sage" aria-label="Green">
+          <span class="theme-preview theme-preview-sage" aria-hidden="true"></span>
+          <span class="theme-name">Green</span>
         </button>
-        <button class="theme-option" data-theme="sand">
-          <div class="theme-preview theme-preview-sand">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="sand" aria-label="Viridian">
+          <span class="theme-preview theme-preview-sand" aria-hidden="true"></span>
+          <span class="theme-name">Viridian</span>
         </button>
-        <button class="theme-option" data-theme="amber">
-          <div class="theme-preview theme-preview-amber">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="amber" aria-label="Citron">
+          <span class="theme-preview theme-preview-amber" aria-hidden="true"></span>
+          <span class="theme-name">Citron</span>
         </button>
-        <button class="theme-option" data-theme="terra">
-          <div class="theme-preview theme-preview-terra">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="terra" aria-label="Orange">
+          <span class="theme-preview theme-preview-terra" aria-hidden="true"></span>
+          <span class="theme-name">Orange</span>
         </button>
-        <button class="theme-option" data-theme="mocha">
-          <div class="theme-preview theme-preview-mocha">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="mocha" aria-label="Apricot">
+          <span class="theme-preview theme-preview-mocha" aria-hidden="true"></span>
+          <span class="theme-name">Apricot</span>
         </button>
-        <button class="theme-option" data-theme="rose">
-          <div class="theme-preview theme-preview-rose">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="rose" aria-label="Rose">
+          <span class="theme-preview theme-preview-rose" aria-hidden="true"></span>
+          <span class="theme-name">Rose</span>
         </button>
-        <button class="theme-option" data-theme="blush">
-          <div class="theme-preview theme-preview-blush">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="blush" aria-label="Pink">
+          <span class="theme-preview theme-preview-blush" aria-hidden="true"></span>
+          <span class="theme-name">Pink</span>
         </button>
-        <button class="theme-option" data-theme="orchid">
-          <div class="theme-preview theme-preview-orchid">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="orchid" aria-label="Fuchsia">
+          <span class="theme-preview theme-preview-orchid" aria-hidden="true"></span>
+          <span class="theme-name">Fuchsia</span>
         </button>
-        <button class="theme-option" data-theme="violet">
-          <div class="theme-preview theme-preview-violet">
-            <div class="preview-light"></div>
-            <div class="preview-dark"></div>
-          </div>
+        <button type="button" class="theme-option" data-theme="violet" aria-label="Violet">
+          <span class="theme-preview theme-preview-violet" aria-hidden="true"></span>
+          <span class="theme-name">Violet</span>
         </button>
       </div>
     </div>
   </div>
-  
+
   <!-- Hidden file input for import -->
   <input type="file" id="import-file-input" accept=".html,.htm" style="display: none;">
 
   <script type="module" src="main.js"></script>
 </body>
 </html>
-

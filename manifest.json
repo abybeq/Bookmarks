@@ -1,20 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Bookmarks",
+  "name": "better bookmarks",
   "version": "1.0.0",
-  "description": "New tab page",
+  "description": "A new tab page for your bookmarks. Organize folders, search bookmarks and browsing history, and navigate with your keyboard.",
   "permissions": [
     "storage",
-    "unlimitedStorage",
-    "tabs",
     "tabGroups",
-    "activeTab",
-    "scripting",
     "history",
-    "contextMenus"
+    "contextMenus",
+    "bookmarks",
+    "search"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://a.favicon.im/*"
   ],
   "action": {
     "default_icon": {
@@ -22,8 +20,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Bookmark",
-    "default_popup": "popup.html"
+    "default_title": "better bookmarks"
   },
   "background": {
     "service_worker": "background.js"
@@ -35,12 +32,5 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["modal-styles.css"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  }
 }
-

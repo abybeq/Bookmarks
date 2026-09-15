@@ -2,13 +2,14 @@
 // STATE MANAGEMENT
 // ============================================
 
-// Core data state
-export let items = [];
-export let currentFolderId = 'root';
+// Root folder ID for "Other Bookmarks"
+export const ROOT_FOLDER_ID = "2";
+
+// Core data state - bookmarks are now fetched from Chrome API, not stored here
+export let currentFolderId = ROOT_FOLDER_ID;
 export let navigationStack = []; // Track folder navigation for breadcrumbs
 
 // Editing state
-export let editingItemId = null;
 export let deletingItemId = null;
 export let deletingItemIds = []; // Track multiple items being deleted (for multi-select)
 
@@ -16,8 +17,6 @@ export let deletingItemIds = []; // Track multiple items being deleted (for mult
 export let isSearchMode = false;
 export let searchQuery = '';
 export let focusedItemIndex = -1;
-export let searchHistory = [];
-export const MAX_SEARCH_HISTORY = 50;
 export let originalSearchQuery = ''; // Store original user-typed query
 
 // Multi-select state
@@ -26,26 +25,16 @@ export let isBoxSelecting = false;
 export let selectionBox = { startX: 0, startY: 0, currentX: 0, currentY: 0 };
 export let selectionBoxElement = null;
 
-// Undo functionality
-export const undoStack = [];
-export const MAX_UNDO_STACK_SIZE = 50;
-
 // Theme state
 export const DEFAULT_THEME = 'frost';
 export let currentTheme = DEFAULT_THEME;
-export let themePicker = null;
-
-// Move mode state
-export let movingItemId = null;
-export let movingItemIds = [];
-export let moveModePreviousFolderId = null;
 
 // Context menu state
 export let contextMenu = null;
 export let contextMenuItemId = null;
 export let bodyContextMenu = null;
 
-// Drag and drop state
+// Drag and drop state (for reordering only)
 export let draggedElement = null;
 export let draggedItemType = null;
 export let isDragging = false;
@@ -71,23 +60,17 @@ export let inlineBookmarkSaving = false;
 
 // Performance flags
 export let eventDelegationInitialized = false;
-export let pendingStorageWrite = null;
-export const STORAGE_DEBOUNCE_MS = 300;
 
-// Unsorted folder constant
-export const UNSORTED_FOLDER_ID = 'unsorted-folder';
-
-// Search suggestions state
-export let suggestionsAbortController = null;
 export let currentSearchId = 0;
+
+// Undo stack for tracking deleted items
+export let undoStack = [];
+const MAX_UNDO_STACK = 20;
+const UNDO_TIMEOUT = 10000; // 10 seconds
 
 // ============================================
 // STATE SETTERS
 // ============================================
-
-export function setItems(newItems) {
-  items = newItems;
-}
 
 export function setCurrentFolderId(folderId) {
   currentFolderId = folderId;
@@ -95,10 +78,6 @@ export function setCurrentFolderId(folderId) {
 
 export function setNavigationStack(stack) {
   navigationStack = stack;
-}
-
-export function setEditingItemId(id) {
-  editingItemId = id;
 }
 
 export function setDeletingItemId(id) {
@@ -121,16 +100,8 @@ export function setFocusedItemIndex(index) {
   focusedItemIndex = index;
 }
 
-export function setSearchHistory(history) {
-  searchHistory = history;
-}
-
 export function setOriginalSearchQuery(query) {
   originalSearchQuery = query;
-}
-
-export function setSelectedItemIds(ids) {
-  selectedItemIds = ids;
 }
 
 export function setIsBoxSelecting(selecting) {
@@ -147,22 +118,6 @@ export function setSelectionBoxElement(element) {
 
 export function setCurrentTheme(theme) {
   currentTheme = theme;
-}
-
-export function setThemePicker(picker) {
-  themePicker = picker;
-}
-
-export function setMovingItemId(id) {
-  movingItemId = id;
-}
-
-export function setMovingItemIds(ids) {
-  movingItemIds = ids;
-}
-
-export function setMoveModePreviousFolderId(id) {
-  moveModePreviousFolderId = id;
 }
 
 export function setContextMenu(menu) {
@@ -253,25 +208,45 @@ export function setEventDelegationInitialized(initialized) {
   eventDelegationInitialized = initialized;
 }
 
-export function setPendingStorageWrite(pending) {
-  pendingStorageWrite = pending;
-}
-
-export function setSuggestionsAbortController(controller) {
-  suggestionsAbortController = controller;
-}
-
 export function setCurrentSearchId(id) {
   currentSearchId = id;
 }
 
 // ============================================
-// STATE HELPERS
+// UNDO STACK MANAGEMENT
 // ============================================
 
-export function isInMoveMode() {
-  return movingItemId !== null;
+export function pushToUndoStack(action) {
+  // Add timestamp to track when action was added
+  action.timestamp = Date.now();
+  undoStack.push(action);
+
+  // Limit stack size
+  if (undoStack.length > MAX_UNDO_STACK) {
+    undoStack.shift();
+  }
 }
+
+export function popFromUndoStack() {
+  return undoStack.pop();
+}
+
+export function peekUndoStack() {
+  return undoStack.length > 0 ? undoStack[undoStack.length - 1] : null;
+}
+
+export function isUndoExpired(action) {
+  return Date.now() - action.timestamp > UNDO_TIMEOUT;
+}
+
+export function cleanExpiredUndoActions() {
+  const now = Date.now();
+  undoStack = undoStack.filter(action => now - action.timestamp <= UNDO_TIMEOUT);
+}
+
+// ============================================
+// STATE HELPERS
+// ============================================
 
 export function clearSelectionState() {
   selectedItemIds.clear();
@@ -313,4 +288,3 @@ export function resetInlineBookmarkState() {
   inlineBookmarkDraftTitle = '';
   inlineBookmarkSaving = false;
 }
-
