@@ -8,7 +8,7 @@ import {
 } from './state.js';
 import {
   showNotification, escapeHtml, getChromePageIconSvg, getChromePageIcon,
-  folderIconOptions, isKnownFolderIcon, DEFAULT_FOLDER_ICON, globeIconSvgHtml
+  folderIconOptions, isKnownFolderIcon, DEFAULT_FOLDER_ICON, globeIconSvgHtml, getIconSvg
 } from './utils.js';
 
 // ============================================
@@ -154,7 +154,7 @@ function renderFaviconSource(source, fallback = 'bookmark') {
     if (fallback === 'globe') {
       return `<span data-favicon-placeholder="${escapeHtml(source)}" data-favicon-fallback="globe">${globeIconSvgHtml}</span>`;
     }
-    return `<img src="${DEFAULT_FAVICON}" alt="" class="bookmark-placeholder" data-favicon-placeholder="${escapeHtml(source)}">`;
+    return `<span data-favicon-placeholder="${escapeHtml(source)}">${getIconSvg('bookmark', { className: 'bookmark-placeholder', width: 24, height: 24 })}</span>`;
   }
   return `<img src="${escapeHtml(source)}" alt="" loading="lazy">`;
 }

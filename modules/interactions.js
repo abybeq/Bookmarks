@@ -181,7 +181,7 @@ export async function openDeleteModalMultiple(itemIds) {
   setDeleteModalContent({
     title: `Delete ${items.length} ${noun}?`,
     bookmarkCount,
-    iconName: 'folder-closed'
+    iconName: folders.length > 0 && !allFolders ? 'trash-can' : 'folder-closed'
   });
 
   deleteModalOverlay.classList.add('active');

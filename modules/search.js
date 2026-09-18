@@ -4,7 +4,7 @@ import {
   currentSearchId, setCurrentSearchId, setFocusedItemIndex, clearSelectionState
 } from './state.js';
 import {
-  escapeHtml, isUrl, normalizeUrl, searchChromePages, formatVisitTime,
+  escapeHtml, isUrl, normalizeUrl, getBookmarkDisplayUrl, searchChromePages, formatVisitTime,
   searchIconSvgHtml, globeIconSvgHtml, linkIconSvgHtml, historyIconSvgHtml,
   getFolderIconSvg, getIconSvg
 } from './utils.js';
@@ -230,7 +230,7 @@ function updateRow(element, data) {
   }
   if (!previous || previous.meta !== data.meta) {
     const meta = element.querySelector('.list-item-meta') || element.querySelector('.list-item-url');
-    if (meta) meta.textContent = data.meta;
+    if (meta) meta.textContent = data.type === 'link' ? getBookmarkDisplayUrl(data.meta) : data.meta;
   }
   if (!previous || previous.url !== data.url) {
     if (element.tagName === 'A') element.setAttribute('href', data.url);

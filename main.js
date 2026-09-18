@@ -55,9 +55,6 @@ import {
 // Import import/export
 import { initImportExport, setImportExportCallbacks } from './modules/importExport.js';
 
-// Import shared hover background
-import { initHoverIndicator } from './modules/hover-indicator.js';
-
 // ============================================
 // DOM ELEMENTS
 // ============================================
@@ -489,7 +486,6 @@ async function init() {
 
   // Initialize event delegation and context menu early for interactivity.
   initEventDelegation();
-  initHoverIndicator();
   initContextMenu(deleteItem, navigateToFolderWrapper, exitSearchModeWrapper);
 
   // Initialize modal listeners and bookmark listeners

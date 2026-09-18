@@ -93,6 +93,19 @@ export function getTitleFromUrl(url) {
   }
 }
 
+// Show the destination compactly without changing the saved bookmark URL.
+export function getBookmarkDisplayUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.host.replace(/^www\./i, '') + parsed.pathname.replace(/\/$/, '') + parsed.search + parsed.hash;
+    }
+  } catch {
+    // Keep unusual or malformed bookmark URLs readable as-is.
+  }
+  return url;
+}
+
 // Navigate to URL (handles chrome:// URLs specially)
 export function navigateToUrl(url, openInNewTab = false) {
   if (!url) return;

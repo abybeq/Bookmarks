@@ -79,7 +79,7 @@ export async function renderBreadcrumb() {
   const totalBookmarks = await getTotalBookmarkCount();
   const bookmarks = await getBookmarks(folderId);
   if (!isCurrent()) return;
-  const hasAnyItems = totalBookmarks > 0 || bookmarks.length > 0;
+  const hasAnyItems = folderId !== ROOT_FOLDER_ID || totalBookmarks > 0 || bookmarks.length > 0;
 
   // Check if inline create mode is active (user clicked add bookmark/folder)
   // If so, show breadcrumb even when there are 0 items
@@ -87,7 +87,7 @@ export async function renderBreadcrumb() {
   const isInlineBookmarkCreate = inlineBookmarkMode === 'create' && inlineBookmarkParentId === currentFolderId;
   const shouldShowBreadcrumb = hasAnyItems || isInlineFolderCreate || isInlineBookmarkCreate;
 
-  // Hide breadcrumb when there are 0 items and no inline create mode
+  // Hide breadcrumbs only at the empty root when no inline creation is active.
   if (!shouldShowBreadcrumb) {
     breadcrumb.style.display = 'none';
     return;

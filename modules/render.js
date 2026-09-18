@@ -3,7 +3,7 @@
 // ============================================
 
 import {
-  currentFolderId, isSearchMode, inlineFolderMode, inlineFolderTargetId, inlineFolderParentId,
+  ROOT_FOLDER_ID, currentFolderId, isSearchMode, inlineFolderMode, inlineFolderTargetId, inlineFolderParentId,
   inlineFolderDraft, inlineFolderSaving, setInlineFolderDraft, setInlineFolderSaving,
   resetInlineFolderState, inlineBookmarkMode, inlineBookmarkTargetId, inlineBookmarkParentId,
   inlineBookmarkDraftUrl, inlineBookmarkDraftTitle, inlineBookmarkSaving,
@@ -11,11 +11,11 @@ import {
   resetInlineBookmarkState
 } from './state.js';
 import {
-  DEFAULT_FOLDER_ICON, escapeHtml, getFolderIconSvg, normalizeUrl, getTitleFromUrl, isUrl
+  DEFAULT_FOLDER_ICON, escapeHtml, getFolderIconSvg, normalizeUrl, getTitleFromUrl, getBookmarkDisplayUrl, isUrl
 } from './utils.js';
 import {
   getFaviconHtml, getBookmarks, createBookmark, createFolder, updateBookmark,
-  getTotalBookmarkCount, getLinkCountInFolder, getFolderDescendantCount, saveCreateForUndo,
+  getLinkCountInFolder, getFolderDescendantCount, saveCreateForUndo,
   saveEditForUndo, getFolderIconName
 } from './storage.js';
 import { renderBreadcrumb } from './navigation.js';
@@ -66,10 +66,9 @@ export async function renderListView(folders, links, isCurrent = () => true) {
   const isInlineBookmarkCreateActive = inlineBookmarkMode === 'create' && inlineBookmarkParentId === currentFolderId;
   const inlineBookmarkEditId = inlineBookmarkMode === 'edit' ? inlineBookmarkTargetId : null;
 
-  // Check if there are any items
-  const totalBookmarks = await getTotalBookmarkCount();
+  // Show onboarding only at the empty root, never inside an existing folder.
   if (!isCurrent()) return;
-  const hasAnyItems = folders.length > 0 || links.length > 0 || totalBookmarks > 0;
+  const hasAnyItems = currentFolderId !== ROOT_FOLDER_ID || folders.length > 0 || links.length > 0;
   const shouldSkipEmptyState = isInlineCreateActive || isInlineBookmarkCreateActive;
 
   if (!hasAnyItems && !shouldSkipEmptyState) {
@@ -150,7 +149,7 @@ export async function renderListView(folders, links, isCurrent = () => true) {
             ${getFaviconHtml(item.url)}
           </div>
           <span class="list-item-title">${escapeHtml(item.title)}</span>
-          <span class="list-item-url">${escapeHtml(item.url)}</span>
+          <span class="list-item-url">${escapeHtml(getBookmarkDisplayUrl(item.url))}</span>
         </a>
       `;
     }).join('');
