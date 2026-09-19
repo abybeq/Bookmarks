@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Варианты анимации удаления</title>
+  <style>
+    @font-face { font-family: "Geist Mono"; src: url("geist-mono-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+    :root {
+      --page: #f7f8fb; --surface: #fff; --secondary: #edf2fa; --hover: #e5ebf5;
+      --text: #3c3c3c; --muted: #959595; --line: rgba(0,0,0,.08); --danger: #dc2626;
+      --shadow: 0 10px 30px rgba(39,48,68,.07); --ease: cubic-bezier(.2,.8,.2,1);
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; min-width: 320px; }
+    button { font: inherit; }
+    .page { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 72px 0 96px; }
+    .intro { max-width: 680px; margin-bottom: 38px; }
+    .eyebrow, .duration, .variant-id { font-family: "Geist Mono", monospace; font-size: 12px; letter-spacing: .02em; }
+    .eyebrow { color: var(--muted); margin: 0 0 12px; }
+    h1 { font-size: clamp(32px, 5vw, 54px); line-height: 1.02; letter-spacing: -.045em; margin: 0 0 18px; font-weight: 650; }
+    .intro p { font-size: 17px; line-height: 1.55; color: #666; margin: 0; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    .chip { padding: 7px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: #696969; font-size: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 28px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: var(--shadow); }
+    .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 15px; }
+    .title-wrap { min-width: 0; }
+    .variant-id { color: var(--muted); display: block; margin-bottom: 5px; }
+    h2 { font-size: 17px; line-height: 1.25; margin: 0; letter-spacing: -.01em; }
+    .duration { white-space: nowrap; padding: 6px 8px; border-radius: 999px; background: var(--secondary); color: #657087; }
+    /* Existing extension list components, copied from styles.css. */
+    .items-grid { min-height: 136px; padding: 8px; overflow: hidden; border-radius: 20px; background: var(--surface); border: 1px solid rgba(0,0,0,.045); }
+    .list-section { display: flex; flex-direction: column; position: relative; }
+    .item-shell { height: 40px; min-height: 0; transform-origin: center; transition: height .2s var(--ease), opacity .2s var(--ease); }
+    .list-item { display: flex; align-items: center; height: 40px; padding: 0 1rem; cursor: pointer; text-decoration: none; color: inherit; background-color: transparent; border-radius: 9999px; overflow: hidden; transform-origin: center; transition-duration: .2s; transition-timing-function: var(--ease); transition-property: opacity, transform, filter, clip-path, border-radius, background-color; }
+    .list-item:hover { background-color: var(--secondary); }
+    .list-item-icon { width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-right: 1rem; }
+    .list-item-icon img { width: 24px; height: 24px; object-fit: contain; }
+    .list-item-title { flex: 1; min-width: 0; font-size: 1rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .list-item-meta { font-size: .875rem; line-height: 24px; color: var(--muted); margin-left: 1rem; flex-shrink: 0; font-family: "Geist Mono", monospace; }
+    .reset:focus-visible, .delete-control:focus-visible, .choose:focus-visible { outline: 2px solid #58677f; outline-offset: 2px; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr auto; align-items: center; gap: 7px; margin-top: 14px; }
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.3; }
+    .reset { border: 0; border-radius: 999px; padding: 8px 11px; background: var(--secondary); color: var(--text); cursor: pointer; font-size: 12px; }
+    .reset:hover { background: var(--hover); }
+    .item-shell.removed { height: 0; margin-top: -8px; opacity: 0; pointer-events: none; }
+
+    /* Every exit and reflow transition is exactly 0.2 seconds. */
+    .v1 .removed .list-item { opacity: 0; }
+    .v2 .removed .list-item { opacity: 0; transform: translateX(-70px); }
+    .v3 .removed .list-item { opacity: 0; transform: translateX(70px); }
+    .v4 .removed .list-item { opacity: 0; transform: scale(.78); }
+    .v5 .removed .list-item { opacity: 0; transform: translateY(-15px) scale(.96); }
+    .v6 .removed .list-item { opacity: 0; filter: blur(7px); transform: scale(.96); }
+    .v7 .list-item { clip-path: inset(0 0 0 0 round 999px); }
+    .v7 .removed .list-item { opacity: 0; clip-path: inset(0 50% 0 50% round 999px); }
+    .v8 .removed .list-item { opacity: 0; transform: rotateX(82deg) scaleY(.65); }
+    .v9 .removed .list-item { opacity: 0; transform: translateX(-18px) skewX(-10deg); }
+    .v10 .removed .list-item { opacity: 0; transform: scale(.7) rotate(-3deg); background-color: #f8dede; }
+    .delete-control { min-width: 0; border: 0; border-radius: 999px; padding: 8px 9px; background: var(--secondary); color: var(--text); cursor: pointer; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .delete-control:hover { background: var(--hover); }
+
+    .choice { margin-top: 30px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; border-radius: 24px; border: 1px solid var(--line); background: var(--surface); }
+    .choice-copy strong { display: block; font-size: 15px; margin-bottom: 3px; }
+    .choice-copy span { color: var(--muted); font-size: 13px; }
+    .choose { border: 0; border-radius: 999px; padding: 10px 14px; background: var(--text); color: white; cursor: pointer; white-space: nowrap; }
+    @media (max-width: 760px) { .page { padding-top: 44px; } .grid { grid-template-columns: 1fr; } .choice { align-items: flex-start; flex-direction: column; } }
+    @media (prefers-reduced-motion: reduce) { .list-item, .item-shell { transition-duration: .2s !important; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="intro">
+      <p class="eyebrow">BETTER BOOKMARKS · DELETE MOTION STUDY</p>
+      <h1>10 способов удалить элемент</h1>
+      <p>Нажмите на корзину у папки или заметки. Во всех вариантах исчезновение элемента и перестроение списка занимают ровно 0,2 секунды.</p>
+      <div class="legend"><span class="chip">3 элемента в каждом списке</span><span class="chip">папка + заметка + ссылка</span><span class="chip">кнопка «Вернуть» сбрасывает пример</span></div>
+    </header>
+    <section class="grid" id="variants" aria-label="Варианты анимации"></section>
+    <form class="choice" data-lavish-question="delete-animation" onsubmit="queueChoice(event)">
+      <div class="choice-copy"><strong>Выберите направление</strong><span>Введите номер варианта от 1 до 10 — выбор будет добавлен в обратную связь.</span></div>
+      <div style="display:flex;gap:8px;min-width:0"><input id="choice" name="choice" type="number" min="1" max="10" required placeholder="№" style="width:68px;border:1px solid var(--line);border-radius:999px;padding:9px 12px;background:var(--page);color:var(--text)"><button class="choose" type="submit">Выбрать</button></div>
+    </form>
+  </main>
+  <script>
+    const variants = [
+      ["Растворение", "Чистое исчезновение без направления"],
+      ["Уход влево", "Элемент покидает список по ходу чтения"],
+      ["Уход вправо", "Как свайп из списка"],
+      ["Уменьшение", "Схлопывание к центру"],
+      ["Подъём", "Лёгкое движение вверх перед исчезновением"],
+      ["Расфокусировка", "Размытие отделяет удаляемый объект"],
+      ["Сжатие в линию", "Карточка закрывается с двух сторон"],
+      ["Откидывание", "Плоскость складывается по горизонтали"],
+      ["Рывок", "Короткий диагональный импульс"],
+      ["Смятие", "Уменьшение, поворот и мягкий красный след"]
+    ];
+    const row = (type, title, meta) => `
+      <div class="item-shell ${type}"><div class="list-item draggable" data-type="${type}">
+        <div class="list-item-icon"><img src="${type === 'folder' ? 'folder.svg' : type === 'note' ? 'note.svg' : 'bookmark.svg'}" alt=""></div>
+        <span class="list-item-title">${title}</span><span class="list-item-meta">${meta}</span>
+      </div></div>`;
+    const grid = document.querySelector('#variants');
+    grid.innerHTML = variants.map((v, i) => `
+      <article class="card v${i + 1}" id="variant-${i + 1}">
+        <div class="card-head"><div class="title-wrap"><span class="variant-id">${String(i + 1).padStart(2, '0')}</span><h2>${v[0]}</h2></div><span class="duration">0,2 s</span></div>
+        <div class="items-grid"><div class="list-section">
+          ${row('folder', 'Product references', '12 bookmarks')}
+          ${row('note', 'Ideas for later', 'Note')}
+          ${row('bookmark', 'Good design is obvious', 'example.com')}
+        </div></div>
+        <div class="actions"><button class="delete-control" type="button" data-delete="folder">Удалить папку</button><button class="delete-control" type="button" data-delete="note">Удалить заметку</button><button class="reset" type="button">Вернуть</button></div>
+        <div class="hint" style="margin-top:8px">${v[1]}</div>
+      </article>`).join('');
+    grid.addEventListener('click', (event) => {
+      const deleteButton = event.target.closest('.delete-control');
+      const resetButton = event.target.closest('.reset');
+      if (deleteButton) deleteButton.closest('.card').querySelector(`.${deleteButton.dataset.delete}`).classList.add('removed');
+      if (resetButton) resetButton.closest('.card').querySelectorAll('.removed').forEach(el => el.classList.remove('removed'));
+    });
+    function queueChoice(event) {
+      event.preventDefault();
+      const number = Number(new FormData(event.currentTarget).get('choice'));
+      if (!number || number < 1 || number > 10) return;
+      const name = variants[number - 1][0];
+      window.lavish?.queuePrompt(`Используй вариант ${number} «${name}» как направление для анимации удаления папки и заметки.`, {
+        tag: 'choice', text: `Выбран вариант ${number}: ${name}`, element: event.currentTarget,
+        data: { question: 'delete-animation', answer: number, label: name }, queueKey: 'delete-animation'
+      });
+    }
+  </script>
+</body>
+</html>

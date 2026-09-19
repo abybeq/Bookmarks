@@ -1,6 +1,6 @@
 # Chrome Web Store copy
 
-Status: prepared locally; not submitted.
+Status: version 1.0.0 submitted on September 18, 2026; pending review. Item ID: `japemljmgniakiecpfjnhlchkplmcien`. Manual publishing is selected.
 
 ## Name
 
@@ -8,36 +8,38 @@ Better Bookmarks
 
 ## Summary
 
-A new tab page for your bookmarks. Organize folders, search bookmarks and browsing history, and navigate with your keyboard.
+Turn every new tab into a bookmark manager. Organize folders, search bookmarks and browsing history, and use your keyboard.
 
 ## Full description
 
-better bookmarks replaces your new tab page with a bookmark manager built around folders, search and keyboard navigation.
+Better Bookmarks turns your new tab into a focused workspace for the bookmarks already saved in your browser. Find a saved page, reorganize a folder or open a set of links without leaving the tab.
 
-Work with your browser's existing bookmarks:
+What you can do:
 
-- Create, rename and organize bookmarks and folders.
-- Move items with drag and drop or work with multiple selections.
-- Search bookmarks and browsing history from your new tab.
-- Navigate folders with your keyboard.
-- Give folders their own icons and choose a color theme.
+- Search bookmarks and matching browsing history in one place.
+- Create, rename, move and delete bookmarks and folders.
+- Organize items with drag and drop or select several items at once.
+- Navigate folders and search results with your keyboard.
 - Import and export bookmarks.
-- Open a folder's links together in a tab group.
-- Undo supported bookmark changes during your session.
+- Open a folder or selected links together in a tab group.
+- Choose folder icons and a color theme.
+- Undo supported bookmark changes made during the current session.
 
-Click the toolbar icon to open better bookmarks. Your bookmarks remain in the browser's bookmark system.
+Better Bookmarks works with Chrome's existing bookmark system. Changes made in the extension also appear in Chrome's bookmark manager and may sync through Chrome if bookmark sync is enabled. You can open the extension from a new tab, its toolbar icon or the page context menu.
 
-Settings are stored on your device. Search queries are not saved by the extension. Website icons are requested from Favicon.im, which receives website domain names. Adding a link may request the destination page to retrieve its title. Web searches use your browser's default search provider. See the privacy policy for details.
+No account or subscription is required. The extension has no ads or developer analytics. Settings are stored on your device, and search queries are not saved by the extension.
+
+To display website icons, Better Bookmarks sends website domain names to Favicon.im. When you add a link, the extension may request that page to retrieve its title. Web searches you choose to run use Chrome's default search provider. See the privacy policy for details.
 
 Support: dima@hamayunau.com
 
 ## Listing setup
 
 - Primary language: English.
-- Suggested category: Productivity; choose the closest available category in the dashboard.
+- Category: Workflow & Planning.
 - Support email: dima@hamayunau.com.
 - Privacy policy URL: https://bookmarks.hamayunau.com/privacy/.
-- Distribution, countries and free/paid declaration: confirm before submission.
+- Distribution: free of charge, public, all regions.
 - Prepared images: `store/assets/icon128.png`, `store/assets/promo-440x280.png` and three 1280 × 800 screenshots in `store/assets/`.
 
 ## Single purpose
@@ -52,7 +54,7 @@ Provide a new tab bookmark manager for organizing, finding and opening saved web
 | history | Search browsing history and display matching titles, URLs and visit times alongside bookmark search results. |
 | storage | Save theme preferences and folder-icon selections on the user's device. |
 | tabGroups | Name and configure a tab group when the user chooses to open a folder or selected links together. |
-| contextMenus | Add an Open better bookmarks item to the browser's page context menu. |
+| contextMenus | Add an Open Better Bookmarks item to the browser's page context menu. |
 | search | Run a user-selected web search through the browser's default search provider. |
 | https://a.favicon.im/* | Retrieve website favicon images from Favicon.im using website domain names. |
 

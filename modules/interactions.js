@@ -9,14 +9,15 @@ import {
   clearSelectionState, addToSelection, removeFromSelection, hasSelection, getSelectionSize,
   getSelectedIdsArray, isBoxSelecting, setIsBoxSelecting, selectionBox, setSelectionBox,
   selectionBoxElement, setSelectionBoxElement, draggedElement, setDraggedElement, draggedItemType,
-  setDraggedItemType, setIsDragging, draggedItemIds, setDraggedItemIds, dropIndicator,
-  setDropIndicator, dropPosition, setDropPosition, dropTargetElement, setDropTargetElement,
+  setDraggedItemType, setIsDragging, setDraggedItemIds,
+  setDropPosition, setDropTargetElement,
   isSearchMode, ROOT_FOLDER_ID, setInlineFolderMode, setInlineFolderTargetId,
-  setInlineFolderParentId, setInlineFolderDraft, resetInlineFolderState, setInlineBookmarkMode,
+  setInlineFolderParentId, setInlineFolderDraft, setInlineFolderRenameUndoEnabled,
+  resetInlineFolderState, setInlineBookmarkMode,
   setInlineBookmarkTargetId, setInlineBookmarkParentId, setInlineBookmarkDraftUrl,
   setInlineBookmarkDraftTitle, resetInlineBookmarkState
 } from './state.js';
-import { escapeHtml, showNotification, getFolderIconSvg, folderIconOptions } from './utils.js';
+import { escapeHtml, showNotification, getFolderIconSvg, getIconSvg, folderIconOptions } from './utils.js';
 import { deleteHistoryUrl } from './search.js';
 import { getIconOptionScrollDelta, searchFolderIcons } from './icon-search.js';
 import {
@@ -32,16 +33,19 @@ import {
 let deleteModalOverlay, deleteModalIcon, deleteModalTitle, deleteModalDescription;
 let deleteConfirmBtn;
 let itemsGrid, breadcrumb;
+let keyboardReorderActive = false;
 let folderIconMenu = null;
 let folderIconMenuItemId = null;
 let folderIconMenuAnchorRect = null;
 let folderIconMenuOriginalIconName = null;
 let contextMenuAnchorElement = null;
+let lastPointerPosition = null;
 const FOLDER_ICON_GRID_COLUMNS = 6;
 
 // Callbacks for render functions
 let renderItemsCallback = null;
 let renderBreadcrumbCallback = null;
+let deleteItemCallback = null;
 
 export function setRenderCallbacks(renderItems, renderBreadcrumb) {
   renderItemsCallback = renderItems;
@@ -88,14 +92,19 @@ export function startInlineFolderCreate() {
 export function startInlineFolderRename(folderId) {
   getBookmarkById(folderId).then(folder => {
     if (!folder) return;
-    resetInlineBookmarkState();
-    resetInlineFolderState();
-    setInlineFolderMode('rename');
-    setInlineFolderTargetId(folderId);
-    setInlineFolderParentId(folder.parentId);
-    setInlineFolderDraft(folder.title || '');
-    if (renderItemsCallback) renderItemsCallback();
+    enterInlineFolderRename(folder);
   });
+}
+
+function enterInlineFolderRename(folder, { undoEnabled = true } = {}) {
+  resetInlineBookmarkState();
+  resetInlineFolderState();
+  setInlineFolderMode('rename');
+  setInlineFolderTargetId(folder.id);
+  setInlineFolderParentId(folder.parentId);
+  setInlineFolderDraft(folder.title || '');
+  setInlineFolderRenameUndoEnabled(undoEnabled);
+  if (renderItemsCallback) return renderItemsCallback();
 }
 
 // ============================================
@@ -147,11 +156,16 @@ export async function openDeleteModal(itemId) {
   if (!item) return;
 
   const isFolder = !item.url;
+  const bookmarkCount = isFolder ? await getTotalBookmarkCount(itemId) : 1;
+
+  if (isFolder && bookmarkCount === 0 && deleteItemCallback) {
+    await deleteItemCallback(itemId);
+    return;
+  }
 
   setDeletingItemId(itemId);
   setDeletingItemIds([itemId]);
 
-  const bookmarkCount = isFolder ? await getTotalBookmarkCount(itemId) : 1;
   setDeleteModalContent({
     title: `Delete ${item.title}?`,
     bookmarkCount,
@@ -200,6 +214,16 @@ export function closeDeleteModal() {
 // ============================================
 
 export function initContextMenu(deleteItemFn, navigateToFolder, exitSearchMode) {
+  deleteItemCallback = deleteItemFn;
+
+  document.addEventListener('pointermove', (e) => {
+    lastPointerPosition = { x: e.clientX, y: e.clientY };
+  }, { passive: true });
+
+  for (const menu of [contextMenu, bodyContextMenu]) {
+    menu?.addEventListener('keydown', handleContextMenuKeydown);
+  }
+
   // Open all menu item
   document.getElementById('context-open-all').addEventListener('click', async () => {
     // Capture itemId before any async work, as hideContextMenu() clears it during event propagation
@@ -405,9 +429,9 @@ export function initContextMenu(deleteItemFn, navigateToFolder, exitSearchMode) 
     document.dispatchEvent(event);
   });
 
-  document.getElementById('body-context-theme').addEventListener('click', () => {
+  document.getElementById('body-context-theme').addEventListener('click', (e) => {
     hideContextMenu();
-    showThemePicker();
+    showThemePicker(e.detail === 0);
   });
 
   // Hide on click
@@ -496,7 +520,7 @@ async function createFolderFromSelectedLinks() {
   saveCreateFolderFromSelectedForUndo(newFolder.id, originalItemsData);
 
   clearSelection();
-  if (renderItemsCallback) renderItemsCallback();
+  await enterInlineFolderRename(newFolder, { undoEnabled: false });
   if (renderBreadcrumbCallback) renderBreadcrumbCallback();
   showNotification(`Created "${newFolder.title}"`);
 }
@@ -605,6 +629,86 @@ export async function showContextMenu(x, y, itemId, anchorElement = null) {
   }
 }
 
+function getVisibleContextMenuItems(menu) {
+  return Array.from(menu?.querySelectorAll('.context-menu-item') || [])
+    .filter(item => item.style.display !== 'none' && !item.disabled);
+}
+
+function focusContextMenuItem(menu, item) {
+  if (!item) return;
+  getVisibleContextMenuItems(menu).forEach(menuItem => {
+    menuItem.tabIndex = menuItem === item ? 0 : -1;
+  });
+  item.focus({ preventScroll: true });
+}
+
+function focusFirstContextMenuItem(menu) {
+  focusContextMenuItem(menu, getVisibleContextMenuItems(menu)[0]);
+}
+
+function handleContextMenuKeydown(e) {
+  const menu = e.currentTarget;
+  if (!menu.classList.contains('active')) return;
+
+  // Keep menu keystrokes from reaching the list navigation underneath it.
+  e.stopPropagation();
+
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    hideContextMenu();
+    return;
+  }
+
+  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+    const activeItem = document.activeElement?.closest?.('.context-menu-item');
+    if (!activeItem || !menu.contains(activeItem)) return;
+    e.preventDefault();
+    activeItem.click();
+    return;
+  }
+
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+
+  const items = getVisibleContextMenuItems(menu);
+  if (items.length === 0) return;
+
+  e.preventDefault();
+  const currentIndex = items.indexOf(document.activeElement);
+  const direction = e.key === 'ArrowDown' ? 1 : -1;
+  const nextIndex = currentIndex < 0
+    ? (direction > 0 ? 0 : items.length - 1)
+    : (currentIndex + direction + items.length) % items.length;
+  focusContextMenuItem(menu, items[nextIndex]);
+}
+
+export async function showContextMenuFromKeyboard() {
+  const selectedItem = document.querySelector('.list-item.selected[data-item-id]');
+  const focusedItem = document.querySelector(
+    '.list-item.keyboard-focused[data-item-id], .browser-history-item.keyboard-focused'
+  );
+  const anchorElement = selectedItem || focusedItem;
+
+  if (anchorElement) {
+    const rect = anchorElement.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    await showContextMenu(x, y, anchorElement.dataset.itemId, anchorElement);
+    const menuRect = contextMenu.getBoundingClientRect();
+    const maxLeft = Math.max(10, window.innerWidth - menuRect.width - 10);
+    const centeredLeft = Math.min(Math.max(10, x - menuRect.width / 2), maxLeft);
+    contextMenu.style.left = `${centeredLeft}px`;
+    focusFirstContextMenuItem(contextMenu);
+    return;
+  }
+
+  const point = lastPointerPosition || {
+    x: Math.round(window.innerWidth / 2),
+    y: Math.round(window.innerHeight / 2)
+  };
+  await showBodyContextMenu(point.x, point.y);
+  focusFirstContextMenuItem(bodyContextMenu);
+}
+
 function updateVisibleFolderIcons(folderId, iconName) {
   document
     .querySelectorAll(`.list-item[data-item-id="${folderId}"][data-type="folder"] .list-item-icon`)
@@ -697,7 +801,7 @@ function showFolderIconMenu(anchorRect, folderId) {
   folderIconMenu.innerHTML = `
     <div class="folder-icon-menu-content">
       <div class="folder-icon-search-container">
-        <input class="folder-icon-search" type="search" placeholder="Search icons" autocomplete="off" spellcheck="false">
+        <input class="folder-icon-search" type="search" placeholder="Search icons" aria-label="Search icons" autocomplete="off" spellcheck="false">
       </div>
       <div class="folder-icon-grid"></div>
     </div>
@@ -711,7 +815,7 @@ function showFolderIconMenu(anchorRect, folderId) {
 
   const searchInput = folderIconMenu.querySelector('.folder-icon-search');
   if (searchInput) {
-    setTimeout(() => searchInput.focus(), 0);
+    searchInput.focus({ preventScroll: true });
   }
 }
 
@@ -782,12 +886,17 @@ function moveFolderIconKeyboardSelection(key) {
 function setActiveFolderIconOption(option, shouldFocus = false) {
   if (!option || !folderIconMenu) return;
 
-  folderIconMenu.querySelectorAll('.folder-icon-option').forEach(iconOption => {
-    const isActive = iconOption === option;
-    iconOption.classList.toggle('active', isActive);
-    iconOption.setAttribute('aria-selected', isActive ? 'true' : 'false');
-    iconOption.tabIndex = isActive ? 0 : -1;
-  });
+  const previous = folderIconMenu.querySelector('.folder-icon-option.active');
+  if (previous !== option) {
+    if (previous) {
+      previous.classList.remove('active');
+      previous.setAttribute('aria-selected', 'false');
+      previous.tabIndex = -1;
+    }
+    option.classList.add('active');
+    option.setAttribute('aria-selected', 'true');
+    option.tabIndex = 0;
+  }
 
   previewFolderIconOption(option);
 
@@ -837,13 +946,18 @@ export async function showBodyContextMenu(x, y) {
 }
 
 export function hideContextMenu() {
+  const focusedMenuItem = document.activeElement?.closest?.('.context-menu-item');
+  if (focusedMenuItem) focusedMenuItem.blur();
+
   if (contextMenu) {
     contextMenu.classList.remove('active');
+    contextMenu.querySelectorAll('.context-menu-item').forEach(item => { item.tabIndex = -1; });
     setContextMenuItemId(null);
     contextMenuAnchorElement = null;
   }
   if (bodyContextMenu) {
     bodyContextMenu.classList.remove('active');
+    bodyContextMenu.querySelectorAll('.context-menu-item').forEach(item => { item.tabIndex = -1; });
   }
   if (folderIconMenu) {
     if (
@@ -929,6 +1043,117 @@ export function toggleItemSelection(itemId, element) {
   updateSelectionStyling();
 }
 
+export function setItemSelection(itemIds) {
+  const ids = new Set(itemIds);
+  clearSelectionState();
+  document.querySelectorAll('.list-item[data-item-id]').forEach(element => {
+    const isSelected = ids.has(element.dataset.itemId);
+    element.classList.toggle('selected', isSelected);
+    if (isSelected) addToSelection(element.dataset.itemId);
+  });
+  updateSelectionStyling();
+}
+
+export function reorderSelectedForKeyboard(items, selectedIds, direction) {
+  const selected = new Set(selectedIds);
+  const reordered = [...items];
+  const itemTypes = ['folder', 'link'];
+
+  for (const type of itemTypes) {
+    const positions = [];
+    const typedItems = [];
+
+    reordered.forEach((item, index) => {
+      const itemType = item.url ? 'link' : 'folder';
+      if (itemType === type) {
+        positions.push(index);
+        typedItems.push(item);
+      }
+    });
+
+    if (direction < 0) {
+      for (let index = 1; index < typedItems.length; index++) {
+        if (selected.has(typedItems[index].id) && !selected.has(typedItems[index - 1].id)) {
+          [typedItems[index - 1], typedItems[index]] = [typedItems[index], typedItems[index - 1]];
+        }
+      }
+    } else {
+      for (let index = typedItems.length - 2; index >= 0; index--) {
+        if (selected.has(typedItems[index].id) && !selected.has(typedItems[index + 1].id)) {
+          [typedItems[index], typedItems[index + 1]] = [typedItems[index + 1], typedItems[index]];
+        }
+      }
+    }
+
+    positions.forEach((position, index) => {
+      reordered[position] = typedItems[index];
+    });
+  }
+
+  return reordered;
+}
+
+export async function moveFocusedItems(direction, focusedIds) {
+  if (isSearchMode || !focusedIds?.length) return false;
+
+  const bookmarks = await getBookmarks(currentFolderId);
+  const reordered = reorderSelectedForKeyboard(bookmarks, focusedIds, direction);
+  if (reordered.every((item, index) => item.id === bookmarks[index].id)) return false;
+
+  const previousPositions = new Map();
+  document.querySelectorAll('.list-item[data-item-id]').forEach(element => {
+    element.getAnimations().forEach(animation => animation.cancel());
+    previousPositions.set(element.dataset.itemId, element.getBoundingClientRect());
+  });
+  keyboardReorderActive = true;
+
+  try {
+    await saveMoveForUndo(bookmarks.map(item => item.id));
+    const currentOrder = bookmarks.map(item => item.id);
+
+    for (let index = 0; index < reordered.length; index++) {
+      const id = reordered[index].id;
+      const oldIndex = currentOrder.indexOf(id);
+      if (oldIndex === index) continue;
+
+      await chrome.bookmarks.move(id, { parentId: currentFolderId, index });
+      currentOrder.splice(oldIndex, 1);
+      currentOrder.splice(index, 0, id);
+    }
+
+    if (renderItemsCallback) await renderItemsCallback();
+    document.querySelectorAll('.list-item[data-item-id]').forEach(element => {
+      if (hasSelection(element.dataset.itemId)) element.classList.add('selected');
+    });
+    updateSelectionStyling();
+
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.querySelectorAll('.list-item[data-item-id]').forEach(element => {
+        const previous = previousPositions.get(element.dataset.itemId);
+        if (!previous) return;
+        const current = element.getBoundingClientRect();
+        const deltaY = previous.top - current.top;
+        if (!deltaY) return;
+        element.animate([
+          { transform: `translateY(${deltaY}px)` },
+          { transform: 'translateY(0)' }
+        ], { duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      });
+    }
+    return true;
+  } catch (error) {
+    console.error('Error moving selected items:', error);
+    showNotification('Could not move all items. Please try again.');
+    return false;
+  } finally {
+    keyboardReorderActive = false;
+  }
+}
+
+export function isKeyboardReorderActive() {
+  return keyboardReorderActive;
+}
+
 export function selectItem(itemId, element) {
   addToSelection(itemId);
   element.classList.add('selected');
@@ -975,14 +1200,7 @@ export function elementIntersectsBox(element, box) {
 }
 
 export async function startBoxSelection(e) {
-  if (isSearchMode) return;
-
-  // Prevent box selection when empty state is shown
-  const totalBookmarks = await getTotalBookmarkCount();
-  const bookmarks = await getBookmarks(currentFolderId);
-  const hasAnyItems = totalBookmarks > 0 || bookmarks.length > 0;
-  if (!hasAnyItems) return;
-
+  if (isSearchMode || e.button !== 0) return;
   if (e.target.closest('.list-item') ||
       e.target.closest('.context-menu') ||
       e.target.closest('.modal-overlay') ||
@@ -992,7 +1210,11 @@ export async function startBoxSelection(e) {
     return;
   }
 
-  if (e.button !== 0) return;
+  // Only blank-space selection needs bookmark data; ordinary row/menu clicks do not.
+  const totalBookmarks = await getTotalBookmarkCount();
+  const bookmarks = await getBookmarks(currentFolderId);
+  const hasAnyItems = totalBookmarks > 0 || bookmarks.length > 0;
+  if (!hasAnyItems) return;
 
   setIsBoxSelecting(true);
   setSelectionBox({
@@ -1031,15 +1253,17 @@ export function updateBoxSelection(e) {
   const width = Math.abs(newBox.currentX - newBox.startX);
   const height = Math.abs(newBox.currentY - newBox.startY);
 
+  const selectableElements = [...document.querySelectorAll('.list-item[data-type="link"], .list-item[data-type="folder"]')];
+  // Read row bounds together, before selection classes invalidate styles.
+  const intersections = selectableElements.map(el => elementIntersectsBox(el, newBox));
   selectionBoxElement.style.left = `${left}px`;
   selectionBoxElement.style.top = `${top}px`;
   selectionBoxElement.style.width = `${width}px`;
   selectionBoxElement.style.height = `${height}px`;
 
-  const selectableElements = document.querySelectorAll('.list-item[data-type="link"], .list-item[data-type="folder"]');
-  selectableElements.forEach(el => {
+  selectableElements.forEach((el, index) => {
     const itemId = el.dataset.itemId;
-    if (elementIntersectsBox(el, newBox)) {
+    if (intersections[index]) {
       selectItem(itemId, el);
     } else if (!e.shiftKey) {
       deselectItem(itemId, el);
@@ -1164,29 +1388,87 @@ export function exportSelectedLinks() {
 }
 
 // ============================================
-// DRAG AND DROP (Reordering only)
+// DRAG AND DROP
+// Native drag transport with a live preview and an animated insertion slot.
 // ============================================
 
-export function cleanupDragState() {
-  document.body.classList.remove('is-dragging');
+let dragSession = null;
+let restoreDragHover = null;
+const MULTI_SELECTION_LANDING_COLOR =
+  'color-mix(in srgb, var(--bg-primary) 52.4%, var(--bg-secondary) 47.6%)';
 
-  document.querySelectorAll('.list-item.dragging').forEach(el => {
-    el.classList.remove('dragging');
+function getMultiDragIconSvg(types) {
+  if (types.has('folder')) return getFolderIconSvg();
+  return getIconSvg('bookmark', {
+    className: 'bookmark-placeholder',
+    width: 24,
+    height: 24,
+    fill: 'var(--text-secondary)'
   });
+}
 
-  if (itemsGrid) {
-    itemsGrid.querySelectorAll('.folder-drop-target').forEach(el => {
-      el.classList.remove('folder-drop-target');
-    });
+function getMultiDragTitle(sources) {
+  const folderCount = sources.filter(row => row.dataset.type === 'folder').length;
+  const bookmarkCount = sources.length - folderCount;
+  const folders = `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`;
+  const bookmarks = `${bookmarkCount} ${bookmarkCount === 1 ? 'bookmark' : 'bookmarks'}`;
+  if (folderCount && bookmarkCount) return `${folders} and ${bookmarks}`;
+  return folderCount ? folders : bookmarks;
+}
+
+function resetDragHover() {
+  restoreDragHover?.();
+  // Chromium can retain :hover on the row it last hit during native dragging.
+  // A real pointer movement refreshes that hit test; until then use default fill.
+  document.body.classList.add('drag-hover-reset');
+  restoreDragHover = () => {
+    document.body.classList.remove('drag-hover-reset');
+    document.removeEventListener('pointermove', restoreDragHover);
+    restoreDragHover = null;
+  };
+  document.addEventListener('pointermove', restoreDragHover);
+}
+
+
+function cancelPendingReorder(session) {
+  clearTimeout(session.reorderTimer);
+  session.reorderTimer = null;
+  session.reorderCandidate = null;
+}
+
+function clearDragTarget() {
+  const session = dragSession;
+  if (!session) return;
+  cancelPendingReorder(session);
+  clearTimeout(session.timer);
+  session.timer = null;
+  session.candidate = null;
+  session.target?.classList.remove('folder-drop-target', 'breadcrumb-drop-target');
+  session.target = null;
+  session.mode = null;
+  if (!session.nesting) session.preview.classList.remove('is-compact');
+  setDropPosition(null);
+  setDropTargetElement(null);
+}
+
+export function cleanupDragState() {
+  const session = dragSession;
+  if (session) {
+    clearDragTarget();
+    cancelAnimationFrame(session.frame);
+    session.controller.abort();
+    session.preview.remove();
+    session.ghost.remove();
+    session.slot.remove();
+    session.landingSlot?.remove();
+    for (const row of session.rows) {
+      row.classList.remove('dragging', 'drag-source');
+      row.getAnimations().forEach(animation => animation.cancel());
+    }
+    dragSession = null;
+    resetDragHover();
   }
-  if (breadcrumb) {
-    breadcrumb.querySelectorAll('.breadcrumb-drop-target').forEach(el => {
-      el.classList.remove('breadcrumb-drop-target');
-    });
-  }
-
-  hideDropIndicator();
-
+  document.body.classList.remove('is-dragging', 'is-drag-settling');
   setIsDragging(false);
   setDraggedElement(null);
   setDraggedItemType(null);
@@ -1195,392 +1477,502 @@ export function cleanupDragState() {
   setDropTargetElement(null);
 }
 
-function createDropIndicator() {
-  if (!dropIndicator) {
-    const indicator = document.createElement('div');
-    indicator.className = 'drop-indicator';
-    indicator.style.display = 'none';
-    setDropIndicator(indicator);
-  }
-  return dropIndicator;
-}
-
-export function showDropIndicator(targetElement, position) {
-  const indicator = createDropIndicator();
-  const targetRect = targetElement.getBoundingClientRect();
-  const containerRect = itemsGrid.getBoundingClientRect();
-
-  if (!indicator.parentNode) {
-    itemsGrid.appendChild(indicator);
-  }
-
-  const top = position === 'before'
-    ? targetRect.top - containerRect.top - 1
-    : targetRect.bottom - containerRect.top - 1;
-
-  indicator.style.top = `${top}px`;
-  indicator.style.display = 'block';
-
-  setDropPosition(position);
-  setDropTargetElement(targetElement);
-}
-
-export function hideDropIndicator() {
-  if (dropIndicator) {
-    dropIndicator.style.display = 'none';
-  }
-  setDropPosition(null);
-  setDropTargetElement(null);
-}
-
-export async function handleDragStart(e) {
-  if (e.target.closest('.item-actions')) {
-    e.preventDefault();
-    return;
-  }
-
-  setIsDragging(true);
-  setDraggedElement(this);
-  setDraggedItemType(this.dataset.type);
-  this.classList.add('dragging');
-  document.body.classList.add('is-dragging');
-
-  const itemId = this.dataset.itemId;
-
-  if (hasSelection(itemId) && getSelectionSize() > 1) {
-    setDraggedItemIds(getSelectedIdsArray());
-    document.querySelectorAll('.list-item.selected').forEach(el => {
-      el.classList.add('dragging');
+// Keep the floating row alive until both the landing and the data update finish.
+function animateDragLanding(session, destination, fade = false) {
+  const { preview } = session;
+  if (!fade) {
+    // The renderer replaces the list during landing. Keep an independent
+    // background at the destination until the floating row is handed off.
+    if (!session.landingSlot) {
+      session.landingSlot = document.createElement('div');
+      session.landingSlot.className = 'drag-placeholder';
+      session.landingSlot.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(session.landingSlot);
+    }
+    Object.assign(session.landingSlot.style, {
+      position: 'fixed', pointerEvents: 'none', zIndex: '9999',
+      left: `${destination.left}px`, top: `${destination.top}px`,
+      width: `${destination.width}px`, height: `${destination.height}px`
     });
-
-    // Check if mixed types
-    const selectedIds = getSelectedIdsArray();
-    let hasLinks = false;
-    let hasFolders = false;
-    for (const id of selectedIds) {
-      const b = await getBookmarkById(id);
-      if (b) {
-        if (b.url) hasLinks = true;
-        else hasFolders = true;
-      }
-    }
-    if (hasLinks && hasFolders) {
-      setDraggedItemType('mixed');
-    }
-  } else {
-    setDraggedItemIds([itemId]);
-    if (getSelectionSize() > 0) {
-      clearSelection();
-    }
   }
+  const from = preview.getBoundingClientRect();
+  preview.style.visibility = '';
+  preview.style.transition = 'none';
+  preview.classList.remove('is-compact');
+  Object.assign(preview.style, {
+    left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`,
+    height: `${from.height}px`, translate: 'none', transform: 'none'
+  });
+  const animateSelection = session.retainSelection && !fade;
+  const landingSelectionColor = session.ids.length > 1
+    ? MULTI_SELECTION_LANDING_COLOR
+    : 'var(--bg-secondary)';
+  const animation = preview.animate([
+    { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`,
+      height: `${from.height}px`, opacity: 1,
+      ...(animateSelection ? { backgroundColor: 'var(--bg-primary)' } : {}) },
+    { left: `${destination.left}px`, top: `${destination.top}px`,
+      width: `${destination.width}px`, height: `${destination.height}px`,
+      opacity: fade ? 0 : 1,
+      ...(animateSelection ? { backgroundColor: landingSelectionColor } : {}) }
+  ], {
+    duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 200,
+    easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards'
+  });
+  return animation.finished.then(() => {
+    if (animateSelection) preview.style.backgroundColor = landingSelectionColor;
+  }).catch(() => {});
+}
 
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/html', this.outerHTML);
-  e.dataTransfer.setData('application/json', JSON.stringify(draggedItemIds));
+async function expandRenderedRows(session, rows) {
+  rows.forEach(row => { row.style.visibility = ''; });
+  session.preview.style.visibility = 'hidden';
+  if (rows.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-  const item = await getBookmarkById(itemId);
-  if (item) {
-    const dragPreview = document.createElement('div');
-    dragPreview.className = 'drag-preview';
+  const parent = rows[0].parentNode;
+  if (!parent || rows.some(row => row.parentNode !== parent)) return;
 
-    let iconHtml = '';
-    let titleText = '';
+  const rowHeight = rows[0].getBoundingClientRect().height;
+  const expandedHeight = rows.reduce((height, row) => (
+    height + row.getBoundingClientRect().height
+  ), 0);
+  const wrapper = document.createElement('div');
+  wrapper.className = 'multi-drop-expansion';
+  wrapper.style.height = `${rowHeight}px`;
+  parent.insertBefore(wrapper, rows[0]);
+  rows.forEach(row => wrapper.appendChild(row));
 
-    if (draggedItemIds.length > 1) {
-      iconHtml = `<span style="font-weight: 600; font-size: 14px;">${draggedItemIds.length}</span>`;
-      titleText = `${draggedItemIds.length} items`;
-    } else {
-      if (item.url) {
-        iconHtml = `<img src="${getFaviconUrl(item.url)}" alt="">`;
-      } else {
-        iconHtml = getFolderIconSvg();
-      }
-      titleText = item.title;
-    }
+  // The fixed landing background has completed its handoff. Leaving it above
+  // the list would cover the real rows while their stack opens.
+  session.landingSlot?.remove();
+  session.landingSlot = null;
 
-    dragPreview.innerHTML = `
-      <div class="drag-preview-icon">${iconHtml}</div>
-      <span class="drag-preview-title">${escapeHtml(titleText)}</span>
-    `;
+  const originalStyles = rows.map(row => ({
+    position: row.style.position,
+    zIndex: row.style.zIndex,
+    backgroundColor: row.style.backgroundColor
+  }));
+  rows.forEach((row, index) => {
+    row.style.position = 'relative';
+    row.style.zIndex = String(rows.length - index);
+    row.style.backgroundColor = session.retainSelection
+      ? MULTI_SELECTION_LANDING_COLOR
+      : 'var(--bg-primary)';
+  });
 
-    dragPreview.style.position = 'fixed';
-    dragPreview.style.top = '-1000px';
-    dragPreview.style.left = '-1000px';
-    document.body.appendChild(dragPreview);
+  const heightAnimation = wrapper.animate([
+    { height: `${rowHeight}px` },
+    { height: `${expandedHeight}px` }
+  ], {
+    duration: 220,
+    easing: 'cubic-bezier(0.77, 0, 0.175, 1)',
+    fill: 'forwards'
+  }).finished.catch(() => {});
+  let precedingHeight = 0;
+  const rowAnimations = rows.map((row, index) => {
+    const offset = precedingHeight;
+    precedingHeight += row.getBoundingClientRect().height;
+    if (index === 0) return Promise.resolve();
+    return row.animate([
+      { transform: `translateY(-${offset}px)` },
+      { transform: 'translateY(0)' }
+    ], {
+      duration: 220,
+      easing: 'cubic-bezier(0.77, 0, 0.175, 1)'
+    }).finished.catch(() => {});
+  });
+  const colorAnimations = session.retainSelection ? rows.map(row => row.animate([
+    { backgroundColor: MULTI_SELECTION_LANDING_COLOR },
+    { backgroundColor: 'var(--bg-secondary)' }
+  ], {
+    duration: 220,
+    easing: 'linear'
+  }).finished.catch(() => {})) : [];
+  await Promise.all([heightAnimation, ...rowAnimations, ...colorAnimations]);
 
-    e.dataTransfer.setDragImage(dragPreview, 120, 24);
+  rows.forEach((row, index) => {
+    Object.assign(row.style, originalStyles[index]);
+  });
 
-    setTimeout(() => {
-      dragPreview.remove();
-    }, 0);
+  for (const row of rows) parent.insertBefore(row, wrapper);
+  wrapper.remove();
+}
+
+function beginDragSettlement(session) {
+  session.settling = true;
+  cancelPendingReorder(session);
+  document.body.classList.add('is-drag-settling');
+  clearTimeout(session.timer);
+  cancelAnimationFrame(session.frame);
+  session.controller.abort();
+  document.body.classList.remove('is-dragging');
+}
+
+async function returnDraggedItem() {
+  const session = dragSession;
+  if (!session || session.settling) return;
+  beginDragSettlement(session);
+  // Restore layout under the preview, without showing a second copy of the item.
+  session.slot.remove();
+  session.sources.forEach(row => {
+    row.classList.remove('drag-source');
+    row.style.visibility = 'hidden';
+  });
+  // A returning group lands at the top of its original block, matching the
+  // insertion-slot handoff used by a successful multi-row drop.
+  const destination = session.sources.length > 1
+    ? session.sources[0]
+    : session.sources.find(row => row.dataset.itemId === session.primaryId);
+  try {
+    if (destination?.isConnected) await animateDragLanding(session, destination.getBoundingClientRect());
+    if (session.sources.length > 1) await expandRenderedRows(session, session.sources);
+  } finally {
+    session.sources.forEach(row => { row.style.visibility = ''; });
+    if (dragSession === session) cleanupDragState();
   }
 }
 
-export function handleDragEnd(e) {
-  this.classList.remove('dragging');
-  cleanupDragState();
-}
-
-export async function handleDragOver(e) {
-  if (!draggedElement || this === draggedElement) return;
-
-  const rect = this.getBoundingClientRect();
-  const mouseY = e.clientY;
-  const dropZoneSize = 12;
-
-  const inTopZone = mouseY < rect.top + dropZoneSize;
-  const inBottomZone = mouseY > rect.bottom - dropZoneSize;
-  const inReorderZone = inTopZone || inBottomZone;
-
-  // Only allow reordering within same type
-  if (inReorderZone && draggedItemType !== 'mixed' && this.dataset.type === draggedItemType) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-
-    this.classList.remove('folder-drop-target');
-
-    const position = inTopZone ? 'before' : 'after';
-    showDropIndicator(this, position);
-    return;
-  }
-
-  if (dropTargetElement === this) {
-    hideDropIndicator();
-  }
-
-  // Allow dropping into folders
-  if ((draggedItemType === 'link' || draggedItemType === 'folder' || draggedItemType === 'mixed') && this.dataset.type === 'folder') {
-    // The browser only fires `drop` if `dragover` is cancelled synchronously.
-    // Folder validation is async, so we allow the drop here and enforce safety in
-    // the drop handler before moving anything.
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-
-    if (draggedItemType === 'folder' || draggedItemType === 'mixed') {
-      const targetFolderId = this.dataset.itemId;
-      for (const dragId of draggedItemIds) {
-        const isDescendant = await isFolderOrDescendant(dragId, targetFolderId);
-        if (isDescendant) {
-          e.dataTransfer.dropEffect = 'none';
-          this.classList.remove('folder-drop-target');
-          return;
-        }
-      }
-    }
-
-    this.classList.add('folder-drop-target');
-    return;
-  }
-}
-
-export async function handleDragEnter(e) {
-  if (!draggedElement || this === draggedElement) return;
-
-  if ((draggedItemType === 'link' || draggedItemType === 'folder' || draggedItemType === 'mixed') && this.dataset.type === 'folder') {
-    if (draggedItemType === 'folder' || draggedItemType === 'mixed') {
-      const targetFolderId = this.dataset.itemId;
-      for (const dragId of draggedItemIds) {
-        const isDescendant = await isFolderOrDescendant(dragId, targetFolderId);
-        if (isDescendant) {
-          return;
-        }
-      }
-    }
-    this.classList.add('folder-drop-target');
-    return;
-  }
-}
-
-export function handleDragLeave(e) {
-  if (!this.contains(e.relatedTarget)) {
-    this.classList.remove('folder-drop-target');
-
-    if (dropTargetElement === this) {
-      hideDropIndicator();
-    }
-  }
-}
-
-export async function handleDrop(e) {
-  e.preventDefault();
-  e.stopPropagation();
-
-  if (!draggedElement || this === draggedElement) {
-    return;
-  }
-
-  const draggedItemId = draggedElement.dataset.itemId;
-  const targetItemId = this.dataset.itemId;
-  const dragType = draggedItemType;
-  const itemIds = [...draggedItemIds];
-
-  const isReorder = dropPosition !== null;
-  const insertAfter = dropPosition === 'after';
-
-  cleanupDragState();
-
-  // Handle reordering within same type
-  if (isReorder && this.dataset.type === dragType) {
-    const bookmarks = await getBookmarks(currentFolderId);
-    const sameTypeItems = dragType === 'folder'
-      ? bookmarks.filter(b => !b.url)
-      : bookmarks.filter(b => b.url);
-
-    const itemsBeingDragged = itemIds.length > 0 ? itemIds : [draggedItemId];
-    const draggedSet = new Set(itemsBeingDragged);
-
-    const targetIndex = sameTypeItems.findIndex(item => item.id === targetItemId);
-    if (targetIndex === -1) return;
-
-    if (draggedSet.has(targetItemId)) return;
-
-    // Calculate new index for Chrome bookmarks API
-    const targetBookmark = await getBookmarkById(targetItemId);
-    let newIndex = targetBookmark.index;
-    if (insertAfter) {
-      newIndex++;
-    }
-
-    // Save for undo before reordering
-    await saveMoveForUndo(itemsBeingDragged);
-
-    // Move each item
-    for (const itemId of itemsBeingDragged) {
-      await chrome.bookmarks.move(itemId, {
-        parentId: currentFolderId,
-        index: newIndex
+function moveSlot(target, after = false) {
+  const session = dragSession;
+  const reference = after ? target.nextSibling : target;
+  if (reference === session.slot || (session.slot.parentNode === target.parentNode && session.slot.nextSibling === reference)) return;
+  const rows = session.rows.filter(row => !row.classList.contains('drag-source'));
+  const positions = rows.map(row => row.getBoundingClientRect().top);
+  rows.forEach(row => row.getAnimations().forEach(animation => animation.cancel()));
+  target.parentNode.insertBefore(session.slot, reference);
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Finish all layout reads before starting animations. Interleaving these
+    // forces the browser to recalculate styles for every following row.
+    const destinations = rows.map(row => row.getBoundingClientRect().top);
+    rows.forEach((row, index) => {
+      const delta = positions[index] - destinations[index];
+      if (delta) row.animate([{ transform: `translateY(${delta}px)` }, { transform: 'translateY(0)' }], {
+        duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)'
       });
-    }
+    });
+  }
+}
 
-    clearSelection();
-    if (renderItemsCallback) renderItemsCallback();
+function showDropIndicator(target, position) {
+  if (!dragSession) return;
+  dragSession.nesting = false;
+  clearDragTarget();
+  if (target === dragSession.slot) {
+    target = dragSession.slotTarget;
+    position = dragSession.slotPosition;
+    if (!target) return;
+  }
+  dragSession.target = target;
+  dragSession.mode = position;
+  dragSession.slotTarget = target;
+  dragSession.slotPosition = position;
+  moveSlot(target, position === 'after');
+  setDropPosition(position);
+  setDropTargetElement(target);
+}
+
+function requestDropIndicator(target, position) {
+  const session = dragSession;
+  if (!session) return;
+  if (!session.nesting) {
+    showDropIndicator(target, position);
     return;
   }
-
-  // Handle dropping into folder
-  if ((dragType === 'link' || dragType === 'folder' || dragType === 'mixed') && this.dataset.type === 'folder') {
-    this.classList.remove('folder-drop-target');
-
-    const itemsToMove = itemIds.length > 0 ? itemIds : [draggedItemId];
-
-    if (dragType === 'folder' || dragType === 'mixed') {
-      for (const itemId of itemsToMove) {
-        const isDescendant = await isFolderOrDescendant(itemId, targetItemId);
-        if (isDescendant) {
-          showNotification('Cannot move a folder into itself or a subfolder');
-          return;
-        }
-      }
+  if (session.reorderCandidate?.target === target && session.reorderCandidate.position === position) return;
+  cancelPendingReorder(session);
+  session.reorderCandidate = { target, position };
+  // Preserve the nesting preview until the pointer dwells in an insertion zone.
+  session.reorderTimer = setTimeout(() => {
+    if (dragSession === session && !session.settling && target.isConnected) {
+      showDropIndicator(target, position);
     }
+  }, 180);
+}
 
-    // Save for undo before moving
-    await saveMoveForUndo(itemsToMove);
+function positionPreview(e) {
+  const session = dragSession;
+  if (!session) return;
+  // Translation moves only the preview, without invalidating list layout.
+  // Keep it separate from the compact state's animated transform.
+  session.preview.style.translate = `${e.clientX - session.offsetX}px ${e.clientY - session.offsetY}px`;
+}
 
-    // Move items into folder
-    for (const itemId of itemsToMove) {
-      await chrome.bookmarks.move(itemId, { parentId: targetItemId });
-    }
-
-    clearSelection();
-    if (renderItemsCallback) renderItemsCallback();
+function selectFolderTarget(target, breadcrumbTarget = false) {
+  const session = dragSession;
+  if (!session) return;
+  cancelPendingReorder(session);
+  if (session.target === target && session.mode === 'inside' || session.candidate === target) return;
+  clearDragTarget();
+  session.candidate = target;
+  const activate = () => {
+    session.target = target;
+    session.mode = 'inside';
+    session.nesting = true;
+    target.classList.add(breadcrumbTarget ? 'breadcrumb-drop-target' : 'folder-drop-target');
+    session.preview.classList.add('is-compact');
+  };
+  // Links cannot contain the destination folder, so no dwell or ancestry lookup
+  // is needed before showing the drop-into-folder state.
+  if (draggedItemType === 'link') {
+    activate();
     return;
   }
-}
-
-// Breadcrumb drag handlers
-export async function handleBreadcrumbDragOver(e) {
-  if (draggedElement && (draggedItemType === 'link' || draggedItemType === 'folder' || draggedItemType === 'mixed')) {
-    // Cancel immediately so folder drops onto breadcrumbs are accepted by the
-    // browser while the async descendant check runs.
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-
-    if (draggedItemType === 'folder' || draggedItemType === 'mixed') {
-      const targetFolderId = this.dataset.folderId;
-      for (const dragId of draggedItemIds) {
-        const isDescendant = await isFolderOrDescendant(dragId, targetFolderId);
-        if (isDescendant) {
-          e.dataTransfer.dropEffect = 'none';
-          this.classList.remove('breadcrumb-drop-target');
-          return;
-        }
+  const folderId = breadcrumbTarget ? target.dataset.folderId : target.dataset.itemId;
+  const validateAndActivate = async () => {
+    try {
+      for (const id of session.ids) {
+        if (await isFolderOrDescendant(id, folderId)) return;
       }
+      if (dragSession !== session || session.settling || session.candidate !== target || !target.isConnected) return;
+      activate();
+    } catch (error) {
+      if (dragSession === session) clearDragTarget();
+      console.error('Cannot validate drag target:', error);
     }
+  };
+  if (session.nesting) {
+    // Keep the compact preview while validating the next folder, without
+    // restarting the dwell timer. The drop handler still rechecks ancestry.
+    void validateAndActivate();
+  } else {
+    session.timer = setTimeout(validateAndActivate, breadcrumbTarget ? 100 : 180);
   }
 }
 
-export async function handleBreadcrumbDragEnter(e) {
-  if (draggedElement && (draggedItemType === 'link' || draggedItemType === 'folder' || draggedItemType === 'mixed')) {
-    if (draggedItemType === 'folder' || draggedItemType === 'mixed') {
-      const targetFolderId = this.dataset.folderId;
-      for (const dragId of draggedItemIds) {
-        const isDescendant = await isFolderOrDescendant(dragId, targetFolderId);
-        if (isDescendant) {
-          return;
-        }
-      }
-    }
-    this.classList.add('breadcrumb-drop-target');
-  }
-}
-
-export function handleBreadcrumbDragLeave(e) {
-  if (!this.contains(e.relatedTarget)) {
-    this.classList.remove('breadcrumb-drop-target');
-  }
-}
-
-export async function handleBreadcrumbDrop(e) {
-  e.preventDefault();
-  e.stopPropagation();
-
-  this.classList.remove('breadcrumb-drop-target');
-
-  if (!draggedElement || (draggedItemType !== 'link' && draggedItemType !== 'folder' && draggedItemType !== 'mixed')) {
-    return;
-  }
-
-  const draggedItemId = draggedElement.dataset.itemId;
-  const itemIds = [...draggedItemIds];
-  const dragType = draggedItemType;
-
+export function handleDragStart(e) {
+  if (dragSession?.settling || e.target.closest('.item-actions')) { e.preventDefault(); return; }
   cleanupDragState();
+  const rows = [...itemsGrid.querySelectorAll('.list-item.draggable')];
+  const id = this.dataset.itemId;
+  const retainSelection = hasSelection(id);
+  const ids = hasSelection(id) && getSelectionSize() > 1 ? getSelectedIdsArray() : [id];
+  const sources = rows.filter(row => ids.includes(row.dataset.itemId));
+  const types = new Set(sources.map(row => row.dataset.type));
+  if (!hasSelection(id)) clearSelection();
+  setDraggedElement(this);
+  setDraggedItemIds(ids);
+  setDraggedItemType(types.size > 1 ? 'mixed' : this.dataset.type);
+  setIsDragging(true);
+  document.body.classList.add('is-dragging');
+  const rect = this.getBoundingClientRect();
+  const preview = document.createElement('div');
+  preview.className = 'drag-preview';
+  preview.style.width = `${rect.width}px`;
+  preview.style.height = `${rect.height}px`;
+  const icon = this.querySelector('.list-item-icon');
+  if (icon) {
+    const previewIcon = icon.cloneNode(ids.length === 1);
+    if (ids.length > 1) previewIcon.innerHTML = getMultiDragIconSvg(types);
+    preview.appendChild(previewIcon);
+  }
+  const title = document.createElement('span');
+  title.className = 'drag-preview-title';
+  title.textContent = this.querySelector('.list-item-title')?.textContent || '';
+  preview.appendChild(title);
+  if (ids.length > 1) title.textContent = getMultiDragTitle(sources);
+  const count = document.createElement('span');
+  count.className = 'drag-preview-count';
+  count.textContent = String(ids.length);
+  preview.appendChild(count);
+  preview.classList.toggle('is-multiple', ids.length > 1);
+  document.body.appendChild(preview);
+  const ghost = document.createElement('canvas');
+  ghost.width = ghost.height = 1;
+  ghost.className = 'drag-native-ghost';
+  document.body.appendChild(ghost);
+  // DataTransfer is writable only during the synchronous dragstart event.
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('application/json', JSON.stringify(ids));
+  e.dataTransfer.setDragImage(ghost, 0, 0);
+  const slot = document.createElement('div');
+  slot.className = 'drag-placeholder';
+  slot.style.height = `${rect.height}px`;
+  slot.setAttribute('aria-hidden', 'true');
+  const controller = new AbortController();
+  dragSession = { rows, ids, sources, preview, ghost, slot, controller, primaryId: id,
+    retainSelection,
+    offsetX: Math.min(e.clientX - rect.left, rect.width - 24), offsetY: e.clientY - rect.top,
+    target: null, mode: null, candidate: null, timer: null, frame: null,
+    folderId: currentFolderId };
+  const session = dragSession;
+  preview.style.setProperty('--compact-offset', `${session.offsetX - 12}px`);
+  positionPreview(e);
+  session.frame = requestAnimationFrame(() => {
+    if (dragSession !== session) return;
+    this.before(slot);
+    sources.forEach(row => row.classList.add('drag-source'));
+  });
+  const options = { signal: controller.signal, capture: true };
+  document.addEventListener('dragover', updateDrag, options);
+  document.addEventListener('drop', finishDrag, options);
+  document.addEventListener('dragend', returnDraggedItem, options);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      returnDraggedItem();
+    }
+  }, options);
+  window.addEventListener('blur', returnDraggedItem, { signal: controller.signal });
+  document.addEventListener('dragleave', event => {
+    if (!event.relatedTarget && (event.clientX <= 0 || event.clientY <= 0)) {
+      clearDragTarget();
+      // Native dragleave can precede dragend when releasing/cancelling. Keep
+      // the live row visible until its return animation takes over.
+    }
+  }, options);
+}
 
-  const targetFolderId = this.dataset.folderId;
+function updateDrag(e) {
+  const session = dragSession;
+  if (!session) return;
+  session.preview.style.visibility = '';
+  positionPreview(e);
+  let hit = document.elementFromPoint(e.clientX, e.clientY);
+  const gridRect = itemsGrid.getBoundingClientRect();
+  // Extend the list's rows and insertion slots across the window. Keep real
+  // controls and breadcrumbs as their own targets rather than projecting them.
+  if ((e.clientX < gridRect.left || e.clientX > gridRect.right) &&
+      !hit?.closest('button, input, a, [role="button"], .breadcrumb-item')) {
+    hit = document.elementFromPoint(gridRect.left + gridRect.width / 2, e.clientY);
+  }
+  const crumb = hit?.closest('.breadcrumb-item[data-folder-id]');
+  const row = hit?.closest('.list-item.draggable');
+  e.preventDefault();
+  // Accept the browser event even over empty/invalid space. finishDrag still
+  // validates the target and returns the row without moving any bookmarks.
+  // Rejecting the native drop defers that return until the OS finishes cancelling.
+  e.dataTransfer.dropEffect = 'move';
+  if (hit === session.slot) {
+    if (session.nesting) requestDropIndicator(session.slot, 'restore');
+    else if (session.candidate) clearDragTarget();
+    return;
+  }
+  // The last insertion slot remains a valid destination below the list across
+  // the window width. Do not leave a visible slot whose drop is cancelled.
+  if (!row && !crumb && session.mode === 'after') {
+    const remaining = session.rows.filter(item =>
+      !session.ids.includes(item.dataset.itemId) && item.dataset.type === session.target.dataset.type);
+    const slotRect = session.slot.getBoundingClientRect();
+    if (session.target === remaining.at(-1) &&
+        e.clientX >= 0 && e.clientX < window.innerWidth &&
+        e.clientY >= slotRect.top && e.clientY < window.innerHeight &&
+        !hit?.closest('button, input, a, [role="button"]')) return;
+  }
+  if (crumb) {
+    selectFolderTarget(crumb, true);
+  } else if (row && !session.ids.includes(row.dataset.itemId)) {
+    const rect = row.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    // Retain the active center target slightly beyond its entry boundaries.
+    const edge = session.nesting ? 5 : 10;
+    if (row.dataset.type === 'folder' &&
+        (draggedItemType === 'link' || y > edge && y < rect.height - edge)) {
+      selectFolderTarget(row);
+    } else if (row.dataset.type === draggedItemType) {
+      const position = y < rect.height / 2 ? 'before' : 'after';
+      if (session.target !== row || session.mode !== position) requestDropIndicator(row, position);
+    } else clearDragTarget();
+  } else clearDragTarget();
+}
 
-  const itemsToMove = itemIds.length > 0 ? itemIds : [draggedItemId];
 
-  if (dragType === 'folder' || dragType === 'mixed') {
-    for (const itemId of itemsToMove) {
-      const isDescendant = await isFolderOrDescendant(itemId, targetFolderId);
-      if (isDescendant) {
-        showNotification('Cannot move a folder into itself or a subfolder');
-        return;
+async function finishDrag(e) {
+  if (!dragSession) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const session = dragSession;
+  if (session.settling) return;
+  const { ids, target, mode, folderId } = session;
+  const targetId = target?.dataset.folderId || target?.dataset.itemId;
+  if (!targetId || !mode) { await returnDraggedItem(); return; }
+  beginDragSettlement(session);
+  const landing = animateDragLanding(session,
+    (mode === 'inside' ? target : session.slot).getBoundingClientRect(), mode === 'inside');
+  let didMove = false;
+  try {
+    if (mode === 'inside') {
+      for (const id of ids) {
+        if (await isFolderOrDescendant(id, targetId)) return;
       }
+      const moves = [];
+      for (const id of ids) {
+        const item = await getBookmarkById(id);
+        if (item && item.parentId !== targetId) moves.push(id);
+      }
+      if (!moves.length) return;
+      await saveMoveForUndo(moves);
+      for (const id of moves) await chrome.bookmarks.move(id, { parentId: targetId });
+      didMove = true;
+    } else {
+      const bookmarks = await getBookmarks(folderId);
+      const selected = new Set(ids);
+      const moving = bookmarks.filter(item => selected.has(item.id));
+      const remaining = bookmarks.filter(item => !selected.has(item.id));
+      const index = remaining.findIndex(item => item.id === targetId);
+      if (index < 0 || moving.length !== ids.length) return;
+      remaining.splice(index + (mode === 'after' ? 1 : 0), 0, ...moving);
+      if (remaining.every((item, i) => item.id === bookmarks[i].id)) return;
+      await saveMoveForUndo(bookmarks.map(item => item.id));
+      const order = bookmarks.map(item => item.id);
+      // Move from later to earlier indices, avoiding Chrome's forward-index adjustment.
+      for (let i = 0; i < remaining.length; i++) {
+        const id = remaining[i].id;
+        const oldIndex = order.indexOf(id);
+        if (oldIndex === i) continue;
+        await chrome.bookmarks.move(id, { parentId: folderId, index: i });
+        order.splice(oldIndex, 1);
+        order.splice(i, 0, id);
+      }
+      didMove = true;
+    }
+    // Reordering selected rows should keep them selected. Moving them into a
+    // folder removes them from this list, so there is nothing here to retain.
+    if (mode === 'inside' || !session.retainSelection) clearSelection();
+  } catch (error) {
+    console.error('Error moving bookmarks:', error);
+    showNotification('Could not move all items. Please try again.');
+  } finally {
+    const hiddenRows = [];
+    try {
+      // A multi-row drop should always hand off as one stacked row and then
+      // open, even when it lands back in its original position and Chrome
+      // does not need to persist a new order.
+      const expandAfterRender = mode !== 'inside' && ids.length > 1;
+      if (expandAfterRender) await landing;
+      if (renderItemsCallback) await renderItemsCallback();
+      if (session.retainSelection && mode !== 'inside') setItemSelection(ids);
+      // The renderer has committed the final order. Hide its copies until the
+      // floating row reaches that position, including when saving is very fast.
+      for (const row of itemsGrid.querySelectorAll('.list-item[data-item-id]')) {
+        if (ids.includes(row.dataset.itemId)) {
+          row.style.visibility = 'hidden';
+          hiddenRows.push(row);
+        }
+      }
+      if (!expandAfterRender) await landing;
+      const expandedMultiple = expandAfterRender && hiddenRows.length > 1;
+      if (expandedMultiple) {
+        await expandRenderedRows(session, hiddenRows);
+      }
+      const destination = hiddenRows.find(row => row.dataset.itemId === session.primaryId);
+      if (destination && !expandedMultiple) {
+        const actual = destination.getBoundingClientRect();
+        const shown = session.preview.getBoundingClientRect();
+        // A failed move lands back at the real, unchanged position.
+        if (Math.abs(actual.top - shown.top) > 1 || Math.abs(actual.left - shown.left) > 1) {
+          session.preview.getAnimations().forEach(animation => animation.cancel());
+          Object.assign(session.preview.style, {
+            left: `${shown.left}px`, top: `${shown.top}px`, width: `${shown.width}px`
+          });
+          await animateDragLanding(session, actual);
+        }
+      }
+    } finally {
+      hiddenRows.forEach(row => { row.style.visibility = ''; });
+      if (dragSession === session) cleanupDragState();
     }
   }
-
-  // Check if any items need to be moved
-  const itemsNeedingMove = [];
-  for (const itemId of itemsToMove) {
-    const item = await getBookmarkById(itemId);
-    if (item && item.parentId !== targetFolderId) {
-      itemsNeedingMove.push(itemId);
-    }
-  }
-
-  if (itemsNeedingMove.length === 0) return;
-
-  // Save for undo before moving
-  await saveMoveForUndo(itemsNeedingMove);
-
-  // Move items
-  for (const itemId of itemsNeedingMove) {
-    await chrome.bookmarks.move(itemId, { parentId: targetFolderId });
-  }
-
-  clearSelection();
-  if (renderItemsCallback) renderItemsCallback();
 }
 
 // ============================================

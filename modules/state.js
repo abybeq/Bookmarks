@@ -49,6 +49,7 @@ export let inlineFolderTargetId = null;
 export let inlineFolderParentId = null;
 export let inlineFolderDraft = '';
 export let inlineFolderSaving = false;
+export let inlineFolderRenameUndoEnabled = true;
 
 // Inline bookmark editing/creation state
 export let inlineBookmarkMode = null; // 'create' | 'edit' | null
@@ -180,6 +181,10 @@ export function setInlineFolderSaving(flag) {
   inlineFolderSaving = flag;
 }
 
+export function setInlineFolderRenameUndoEnabled(enabled) {
+  inlineFolderRenameUndoEnabled = enabled;
+}
+
 export function setInlineBookmarkMode(mode) {
   inlineBookmarkMode = mode;
 }
@@ -278,6 +283,7 @@ export function resetInlineFolderState() {
   inlineFolderParentId = null;
   inlineFolderDraft = '';
   inlineFolderSaving = false;
+  inlineFolderRenameUndoEnabled = true;
 }
 
 export function resetInlineBookmarkState() {

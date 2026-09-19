@@ -32,6 +32,8 @@ A Chrome extension that replaces your new tab page with a bookmark manager. It u
 
 Run `node --experimental-vm-modules scripts/check-runtime.mjs` to check module imports, DOM references and icon search without accessing browser data. Verify UI interactions in Helium.
 
+Run `node --experimental-vm-modules scripts/check-performance.mjs` for cache invalidation, concurrent reads, favicon startup, and selection layout checks. Run `node scripts/check-drag-landing.mjs` for drag lifecycle checks. See [PERFORMANCE.md](PERFORMANCE.md) for the audit findings and measurement limits.
+
 ## Release preparation
 
 Run `python3 scripts/package-release.py` to create a local review ZIP in `dist/`. The script includes only runtime files and notices, checks JavaScript syntax, and excludes development assets.

@@ -54,7 +54,11 @@ export function initSearchElements() {
   void refresh();
   for (const event of ['onCreated', 'onRemoved', 'onChanged', 'onMoved',
     'onChildrenReordered', 'onImportEnded']) {
-    chrome.bookmarks[event].addListener(refresh);
+    chrome.bookmarks[event].addListener(() => {
+      // Folder rendering warms the index when needed. Do not rebuild it for
+      // every imported or moved bookmark while search is closed.
+      if (isSearchMode) void refresh();
+    });
   }
 }
 
@@ -210,9 +214,14 @@ export async function showMoreHistory(focusNewResults = false) {
   }
 }
 
+let savedUrlEntries = null;
+let savedUrls = new Set();
 function unsavedHistory(history) {
-  const savedUrls = new Set((getCachedBookmarkSearchEntries() || [])
-    .filter(entry => entry.url).map(entry => entry.url));
+  const entries = getCachedBookmarkSearchEntries();
+  if (entries !== savedUrlEntries) {
+    savedUrlEntries = entries;
+    savedUrls = new Set((entries || []).filter(entry => entry.url).map(entry => entry.url));
+  }
   return history.filter(item => !savedUrls.has(item.url.toLowerCase()));
 }
 

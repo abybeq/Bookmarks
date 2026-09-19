@@ -22,6 +22,12 @@ const main = load(path.join(root, 'main.js'));
 await main.link((specifier, parent) => load(path.resolve(path.dirname(parent.identifier), specifier)));
 
 const html = readFileSync(path.join(root, 'newtab.html'), 'utf8');
+const mainSource = readFileSync(path.join(root, 'main.js'), 'utf8');
+const storageSource = readFileSync(path.join(root, 'modules/storage.js'), 'utf8');
+assert.match(storageSource, /addEventListener\('mouseenter',[\s\S]*?renderTheme\(option\.getAttribute\('data-theme'\)\)/);
+assert.match(storageSource, /addEventListener\('mouseleave',[\s\S]*?renderTheme\(currentTheme\)/);
+assert.match(storageSource, /export function hideThemePicker\(\) \{[\s\S]*?renderTheme\(currentTheme\)/);
+
 const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
 for (const module of modules.values()) {
   const source = readFileSync(module.identifier, 'utf8');
@@ -90,7 +96,15 @@ context.window = {
   open: (url, target) => opened.push({ url, target }),
   scrollBy() {}, scrollTo: options => scrolls.push(options.top)
 };
-context.chrome = { bookmarks: new Proxy({ getTree: async () => [] }, {
+context.navigator = { clipboard: { writeText: async value => { context.copiedText = value; } } };
+context.chrome = { bookmarks: new Proxy({
+  getTree: async () => [],
+  get: async id => [{
+    id: String(id),
+    title: `Bookmark ${id}`,
+    url: String(id) === '1' ? undefined : `https://${id}.test`
+  }]
+}, {
   get: (target, key) => target[key] || { addListener() {} }
 }) };
 const keyboard = load(path.join(root, 'modules/keyboard.js'));
@@ -141,6 +155,238 @@ for (const provider of ['google', 'chatgpt']) {
   verifyDestination(context.window.location.href, provider);
 }
 console.log('Passed: Ask target order, labels, return navigation, scroll-to-top, Enter, new tabs and Unicode URL encoding.');
+
+state.setIsSearchMode(false);
+state.setSearchQuery('');
+state.setCurrentFolderId(state.ROOT_FOLDER_ID);
+rows.forEach((row, index) => {
+  row.dataset = { type: index === 0 ? 'folder' : 'link', itemId: String(index + 1) };
+  row.classList.remove('suggestion-item');
+});
+const thirdKeyboardRow = fakeElement();
+thirdKeyboardRow.dataset = { type: 'link', itemId: '3' };
+rows.push(thirdKeyboardRow);
+let themePickerOpen = false;
+const themePickerMoves = [];
+let themePickerConfirmations = 0;
+const keyboardSelectedIds = new Set();
+const keyboardMoveDirections = [];
+const cutBookmarkIds = [];
+keyboard.namespace.setKeyboardCallbacks({
+  isThemePickerOpen: () => themePickerOpen,
+  hideThemePicker: () => { themePickerOpen = false; },
+  moveThemePickerSelection: key => { themePickerMoves.push(key); },
+  confirmThemePickerSelection: () => {
+    themePickerConfirmations++;
+    themePickerOpen = false;
+  },
+  getSelectionSize: () => keyboardSelectedIds.size,
+  getSelectedIds: () => [...keyboardSelectedIds],
+  cutBookmarks: async idsToCut => { cutBookmarkIds.push(...idsToCut); },
+  setItemSelection: idsToSelect => {
+    keyboardSelectedIds.clear();
+    idsToSelect.forEach(id => keyboardSelectedIds.add(id));
+    rows.forEach(item => {
+      if (keyboardSelectedIds.has(item.dataset.itemId)) item.classList.add('selected');
+      else item.classList.remove('selected');
+    });
+  },
+  moveFocusedItems: async (direction, focusedIds) => {
+    keyboardMoveDirections.push({ direction, focusedIds });
+    return true;
+  }
+});
+keyboard.namespace.focusItem(0);
+let rootEscapePrevented = false;
+await listeners.get('keydown')({
+  key: 'Escape',
+  preventDefault() { rootEscapePrevented = true; }
+});
+assert(rootEscapePrevented);
+assert.equal(state.focusedItemIndex, -1);
+assert(rows.every(row => !row.classList.contains('keyboard-focused')));
+console.log('Passed: Escape clears keyboard focus in the root folder.');
+
+keyboard.namespace.focusItem(0);
+themePickerOpen = true;
+for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End']) {
+  let prevented = false;
+  let stopped = false;
+  await listeners.get('keydown')({
+    key,
+    preventDefault() { prevented = true; },
+    stopPropagation() { stopped = true; }
+  });
+  assert(prevented);
+  assert(stopped);
+  assert.equal(themePickerMoves.at(-1), key);
+}
+assert.equal(state.focusedItemIndex, 0);
+console.log('Passed: arrows, Home and End change the Customize theme without navigating the item list.');
+
+for (const key of ['Enter', ' ']) {
+  themePickerOpen = true;
+  let prevented = false;
+  let stopped = false;
+  await listeners.get('keydown')({
+    key,
+    preventDefault() { prevented = true; },
+    stopPropagation() { stopped = true; }
+  });
+  assert(prevented);
+  assert(stopped);
+  assert.equal(themePickerOpen, false);
+}
+assert.equal(themePickerConfirmations, 2);
+assert.equal(state.focusedItemIndex, 0);
+console.log('Passed: Enter and Space confirm the theme, close Customize and stay out of the item list.');
+
+themePickerOpen = true;
+let customizeEscapePrevented = false;
+await listeners.get('keydown')({
+  key: 'Escape',
+  preventDefault() { customizeEscapePrevented = true; }
+});
+assert(customizeEscapePrevented);
+assert.equal(themePickerOpen, false);
+assert.equal(state.focusedItemIndex, 0);
+console.log('Passed: Escape closes Customize before changing list focus.');
+
+context.document.activeElement = elements.get('items-grid');
+keyboard.namespace.focusItem(0);
+let shiftArrowPrevented = false;
+await listeners.get('keydown')({
+  key: 'ArrowDown', shiftKey: true,
+  preventDefault() { shiftArrowPrevented = true; }
+});
+assert(shiftArrowPrevented);
+assert.deepEqual([...keyboardSelectedIds], ['1', '2']);
+assert.equal(state.focusedItemIndex, 1);
+await listeners.get('keydown')({ key: 'ArrowDown', shiftKey: true, preventDefault() {} });
+assert.deepEqual([...keyboardSelectedIds], ['1', '2', '3']);
+assert.equal(state.focusedItemIndex, 2);
+await listeners.get('keydown')({ key: 'ArrowUp', shiftKey: true, preventDefault() {} });
+assert.deepEqual([...keyboardSelectedIds], ['1', '2']);
+assert.equal(state.focusedItemIndex, 1);
+console.log('Passed: Shift+arrows grow and shrink selection around the original anchor.');
+
+keyboardSelectedIds.clear();
+rows.forEach(item => item.classList.remove('selected'));
+keyboard.namespace.focusItem(1);
+let optionArrowPrevented = false;
+await listeners.get('keydown')({
+  key: 'ArrowDown', altKey: true,
+  preventDefault() { optionArrowPrevented = true; }
+});
+assert(optionArrowPrevented);
+assert.deepEqual([...keyboardSelectedIds], []);
+assert.equal(keyboardMoveDirections.length, 1);
+assert.equal(keyboardMoveDirections[0].direction, 1);
+assert.deepEqual([...keyboardMoveDirections[0].focusedIds], ['2']);
+assert.equal(state.focusedItemIndex, 1);
+console.log('Passed: Option+Down moves the focused item without creating separate selection state.');
+
+keyboardSelectedIds.clear();
+keyboard.namespace.focusItem(1);
+let cutPrevented = false;
+await listeners.get('keydown')({
+  key: 'x', metaKey: true,
+  preventDefault() { cutPrevented = true; }
+});
+assert(cutPrevented);
+assert.equal(context.copiedText, 'https://2.test');
+assert.deepEqual(cutBookmarkIds, ['2']);
+console.log('Passed: Cmd+X copies and cuts the focused bookmark.');
+
+const interactionsModule = load(path.join(root, 'modules/interactions.js'));
+await interactionsModule.evaluate();
+const reorderSelectedForKeyboard = interactionsModule.namespace.reorderSelectedForKeyboard;
+const ordered = [
+  { id: 'f1' }, { id: 'l1', url: 'https://1.test' },
+  { id: 'f2' }, { id: 'l2', url: 'https://2.test' },
+  { id: 'f3' }, { id: 'l3', url: 'https://3.test' }
+];
+assert.deepEqual(
+  [...reorderSelectedForKeyboard(ordered, ['f2', 'l2'], -1)].map(item => item.id),
+  ['f2', 'l2', 'f1', 'l1', 'f3', 'l3']
+);
+assert.deepEqual(
+  [...reorderSelectedForKeyboard(ordered, ['f1', 'f2', 'l1', 'l2'], 1)].map(item => item.id),
+  ['f3', 'l3', 'f1', 'l1', 'f2', 'l2']
+);
+console.log('Passed: keyboard reordering preserves selected order within folder and bookmark sections.');
+
+const interactionsSource = readFileSync(path.join(root, 'modules/interactions.js'), 'utf8');
+const keyboardContextMenuSource = interactionsSource.slice(
+  interactionsSource.indexOf('export async function showContextMenuFromKeyboard()'),
+  interactionsSource.indexOf('\nfunction updateVisibleFolderIcons')
+);
+assert(keyboardContextMenuSource.includes('const x = rect.left + rect.width / 2'));
+assert(keyboardContextMenuSource.includes('const y = rect.top + rect.height / 2'));
+assert(keyboardContextMenuSource.includes('x - menuRect.width / 2'));
+assert(keyboardContextMenuSource.includes('contextMenu.style.left = `${centeredLeft}px`'));
+console.log('Passed: keyboard context menu is horizontally centered over its item.');
+
+const menuKeydownSource = interactionsSource.slice(
+  interactionsSource.indexOf('function handleContextMenuKeydown('),
+  interactionsSource.indexOf('\nexport async function showContextMenuFromKeyboard')
+);
+const activeMenuItem = { clicks: 0, click() { this.clicks++; } };
+const activeMenu = {
+  classList: { contains: value => value === 'active' },
+  contains: item => item === activeMenuItem
+};
+let menuHidden = false;
+const handleContextMenuKeydown = vm.runInNewContext(`(${menuKeydownSource})`, {
+  document: { activeElement: { closest: () => activeMenuItem } },
+  hideContextMenu: () => { menuHidden = true; },
+  getVisibleContextMenuItems: () => [activeMenuItem],
+  focusContextMenuItem() {}
+});
+for (const key of ['Enter', ' ']) {
+  let prevented = false;
+  let stopped = false;
+  handleContextMenuKeydown({
+    currentTarget: activeMenu,
+    key,
+    preventDefault() { prevented = true; },
+    stopPropagation() { stopped = true; }
+  });
+  assert(prevented && stopped);
+}
+assert.equal(activeMenuItem.clicks, 2);
+handleContextMenuKeydown({
+  currentTarget: activeMenu,
+  key: 'Escape',
+  preventDefault() {},
+  stopPropagation() {}
+});
+assert(menuHidden);
+console.log('Passed: context-menu Enter, Space and Escape stay inside the menu.');
+
+const folderIconMenuSource = interactionsSource.slice(
+  interactionsSource.indexOf('function showFolderIconMenu('),
+  interactionsSource.indexOf('\nfunction renderFolderIconOptions')
+);
+assert(folderIconMenuSource.includes('searchInput.focus({ preventScroll: true })'));
+assert(!folderIconMenuSource.includes('setTimeout'));
+
+const bookmarkMoveListenerSource = mainSource.slice(
+  mainSource.indexOf('chrome.bookmarks.onMoved.addListener'),
+  mainSource.indexOf('// ============================================\n// INITIALIZATION')
+);
+assert(bookmarkMoveListenerSource.includes('if (isDragging || isKeyboardReorderActive()) return;'));
+console.log('Passed: native bookmark move events cannot interrupt drag settlement rendering.');
+console.log('Passed: Change icon focuses its search field immediately.');
+
+const renderSource = readFileSync(path.join(root, 'modules/render.js'), 'utf8');
+const inlineBookmarkHandlersSource = renderSource.slice(
+  renderSource.indexOf('function attachInlineBookmarkInputHandlers()'),
+  renderSource.indexOf('\nfunction updateInlineBookmarkFavicon')
+);
+assert(inlineBookmarkHandlersSource.includes("e.key === 'Tab' && mode === 'edit'"));
+assert(inlineBookmarkHandlersSource.includes('inputs[nextIndex].focus({ preventScroll: true })'));
+console.log('Passed: bookmark edit cycles Tab focus between name and URL.');
 
 // Async history should replace automatic focus, but retain keyboard navigation.
 const searchSource = readFileSync(path.join(root, 'modules/search.js'), 'utf8');

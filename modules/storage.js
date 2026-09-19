@@ -23,18 +23,21 @@ const FAVICON_CACHE_STORE_NAME = 'favicons';
 const FAVICON_CACHE_DB_VERSION = 2;
 const FAVICON_CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days
 let faviconCacheDB = null;
+let faviconCacheInitialization = null;
 const FOLDER_ICONS_STORAGE_KEY = 'folderIcons';
 let folderIcons = {};
 
 // Initialize IndexedDB for favicon caching
 export async function initFaviconCache() {
-  return new Promise((resolve, reject) => {
+  if (faviconCacheInitialization) return faviconCacheInitialization;
+  faviconCacheInitialization = new Promise((resolve) => {
     const request = indexedDB.open(FAVICON_CACHE_DB_NAME, FAVICON_CACHE_DB_VERSION);
 
     request.onerror = () => {
       console.warn('IndexedDB not available, using in-memory cache only');
       resolve(null);
     };
+    request.onblocked = () => resolve(null);
 
     request.onsuccess = (event) => {
       faviconCacheDB = event.target.result;
@@ -50,6 +53,7 @@ export async function initFaviconCache() {
       }
     };
   });
+  return faviconCacheInitialization;
 }
 
 // Get cached favicon from IndexedDB
@@ -58,6 +62,9 @@ export async function getCachedFavicon(domain) {
     return faviconCache.get(domain);
   }
 
+  // First paint can request icons before IndexedDB finishes opening.
+  // Wait for the existing cache instead of fetching those icons again.
+  if (faviconCacheInitialization) await faviconCacheInitialization;
   if (!faviconCacheDB) return null;
 
   return new Promise((resolve) => {
@@ -135,13 +142,12 @@ export async function fetchAndCacheFavicon(url) {
     const resolvedUrl = await pending;
     // The fragment identifies the domain without requesting a different SVG file.
     const placeholder = `${DEFAULT_FAVICON}#${encodeURIComponent(domain)}`;
-    for (const img of document.querySelectorAll('img')) {
-      if (img.getAttribute('src') === placeholder) img.src = resolvedUrl;
+    const selectorValue = CSS.escape(placeholder);
+    for (const img of document.querySelectorAll(`img[src="${selectorValue}"]`)) {
+      img.src = resolvedUrl;
     }
-    for (const icon of document.querySelectorAll('[data-favicon-placeholder]')) {
-      if (icon.dataset.faviconPlaceholder === placeholder) {
-        icon.outerHTML = renderFaviconSource(resolvedUrl, icon.dataset.faviconFallback);
-      }
+    for (const icon of document.querySelectorAll(`[data-favicon-placeholder="${selectorValue}"]`)) {
+      icon.outerHTML = renderFaviconSource(resolvedUrl, icon.dataset.faviconFallback);
     }
     return resolvedUrl;
   } finally {
@@ -229,6 +235,9 @@ export async function setFolderIconName(folderId, iconName) {
 // Get bookmarks for a folder
 export async function getBookmarks(folderId = ROOT_FOLDER_ID) {
   try {
+    const folder = readyBookmarkSnapshot?.nodes.get(folderId);
+    if (folder) return (folder.children || []).map(({ children, ...item }) => item);
+    // After a mutation, use a direct read until rendering needs the tree again.
     const results = await chrome.bookmarks.getChildren(folderId);
     return results;
   } catch (error) {
@@ -240,6 +249,11 @@ export async function getBookmarks(folderId = ROOT_FOLDER_ID) {
 // Get a single bookmark by ID
 export async function getBookmarkById(id) {
   try {
+    const node = readyBookmarkSnapshot?.nodes.get(id);
+    if (node) {
+      const { children, ...item } = node;
+      return item;
+    }
     const results = await chrome.bookmarks.get(id);
     return results[0];
   } catch (error) {
@@ -436,21 +450,17 @@ export async function getFolderDescendantCount(folderId) {
 // Check if targetFolderId is the same as or a descendant of folderId
 export async function isFolderOrDescendant(folderId, targetFolderId) {
   if (folderId === targetFolderId) return true;
-
-  const descendants = new Set();
-
-  async function collectDescendants(id) {
-    const children = await getBookmarks(id);
-    for (const child of children) {
-      if (!child.url) {
-        descendants.add(child.id);
-        await collectDescendants(child.id);
-      }
-    }
+  const { nodes } = await getBookmarkSnapshot();
+  // Fail closed if ancestry is unavailable: never allow an unchecked move.
+  if (!nodes.has(folderId) || !nodes.has(targetFolderId)) {
+    throw new Error('Cannot validate bookmark ancestry');
   }
-
-  await collectDescendants(folderId);
-  return descendants.has(targetFolderId);
+  let node = nodes.get(targetFolderId);
+  while (node) {
+    if (node.id === folderId) return true;
+    node = nodes.get(node.parentId);
+  }
+  return false;
 }
 
 // ============================================
@@ -548,11 +558,13 @@ export async function performUndo() {
       case 'delete': {
         // Restore deleted items
         let restoredCount = 0;
+        const restoredItemIds = [];
 
         for (const itemData of action.items) {
           const restored = await restoreBookmarkData(itemData);
           if (restored) {
             restoredCount++;
+            restoredItemIds.push(restored.id);
           }
         }
 
@@ -562,9 +574,9 @@ export async function performUndo() {
 
           if (itemCount === 1) {
             const name = action.items[0].title || (isFolder ? 'Folder' : 'Bookmark');
-            return { success: true, message: `Restored "${name}"` };
+            return { success: true, message: `Restored "${name}"`, restoredItemIds };
           } else {
-            return { success: true, message: `Restored ${itemCount} items` };
+            return { success: true, message: `Restored ${itemCount} items`, restoredItemIds };
           }
         }
         return { success: false, message: 'Failed to restore' };
@@ -743,13 +755,18 @@ export async function saveTheme(theme) {
   }
 }
 
-export function applyTheme(theme) {
-  const themeToApply = theme || DEFAULT_THEME;
-  if (themeToApply === 'default') {
+function renderTheme(theme) {
+  const themeToRender = theme || DEFAULT_THEME;
+  if (themeToRender === 'default') {
     document.body.removeAttribute('data-theme');
   } else {
-    document.body.setAttribute('data-theme', themeToApply);
+    document.body.setAttribute('data-theme', themeToRender);
   }
+}
+
+export function applyTheme(theme) {
+  const themeToApply = theme || DEFAULT_THEME;
+  renderTheme(themeToApply);
   setCurrentTheme(themeToApply);
   updateThemePickerUI();
 }
@@ -763,7 +780,10 @@ export function updateThemePickerUI() {
   const options = themePicker.querySelectorAll('.theme-option');
   options.forEach(option => {
     const theme = option.getAttribute('data-theme');
-    if (theme === currentTheme) {
+    const isActive = theme === currentTheme;
+    option.setAttribute('aria-pressed', String(isActive));
+    option.tabIndex = isActive ? 0 : -1;
+    if (isActive) {
       option.classList.add('active');
     } else {
       option.classList.remove('active');
@@ -771,16 +791,75 @@ export function updateThemePickerUI() {
   });
 }
 
-export function showThemePicker() {
+export function moveThemePickerSelection(key) {
+  if (!themePicker?.classList.contains('active')) return;
+
+  const options = Array.from(themePicker.querySelectorAll('.theme-option'));
+  if (options.length === 0) return;
+
+  const focusedIndex = options.indexOf(document.activeElement);
+  const activeIndex = options.findIndex(option => option.classList.contains('active'));
+  const currentIndex = focusedIndex >= 0 ? focusedIndex : Math.max(activeIndex, 0);
+  let nextIndex = currentIndex;
+
+  if (key === 'ArrowRight' || key === 'ArrowDown') {
+    nextIndex = (currentIndex + 1) % options.length;
+  } else if (key === 'ArrowLeft' || key === 'ArrowUp') {
+    nextIndex = (currentIndex - 1 + options.length) % options.length;
+  } else if (key === 'Home') {
+    nextIndex = 0;
+  } else if (key === 'End') {
+    nextIndex = options.length - 1;
+  }
+
+  const nextOption = options[nextIndex];
+  const theme = nextOption.getAttribute('data-theme');
+
+  applyTheme(theme);
+  void saveTheme(theme);
+  nextOption.focus({ preventScroll: true });
+  nextOption.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+export function confirmThemePickerSelection() {
+  if (!themePicker?.classList.contains('active')) return;
+
+  const focusedOption = document.activeElement?.closest?.('.theme-option');
+  const option = themePicker.contains(focusedOption)
+    ? focusedOption
+    : themePicker.querySelector('.theme-option.active');
+  if (!option) return;
+
+  const theme = option.getAttribute('data-theme');
+  applyTheme(theme);
+  void saveTheme(theme);
+  hideThemePicker();
+}
+
+export function showThemePicker(focusActiveTheme = false) {
   if (!themePicker) return;
   themePicker.classList.add('active');
   document.body.classList.add('theme-picker-open');
+
+  if (focusActiveTheme) {
+    const activeOption = themePicker.querySelector('.theme-option.active');
+    activeOption?.focus({ preventScroll: true });
+    activeOption?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
 }
 
 export function hideThemePicker() {
   if (!themePicker) return;
+  renderTheme(currentTheme);
+  if (themePicker.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
   themePicker.classList.remove('active');
   document.body.classList.remove('theme-picker-open');
+}
+
+export function isThemePickerOpen() {
+  return Boolean(themePicker?.classList.contains('active'));
 }
 
 export function initThemePicker() {
@@ -789,6 +868,12 @@ export function initThemePicker() {
 
   const options = themePicker.querySelectorAll('.theme-option');
   options.forEach(option => {
+    option.addEventListener('mouseenter', () => {
+      renderTheme(option.getAttribute('data-theme'));
+    });
+    option.addEventListener('mouseleave', () => {
+      renderTheme(currentTheme);
+    });
     option.addEventListener('click', () => {
       const theme = option.getAttribute('data-theme');
       applyTheme(theme);
@@ -855,7 +940,8 @@ export async function fetchPageTitle(url) {
 export async function copyLinkToClipboard(url, successMessage = 'Link copied') {
   try {
     await navigator.clipboard.writeText(url);
-    showNotification(successMessage);
+    if (successMessage) showNotification(successMessage);
+    return true;
   } catch (error) {
     console.error('Failed to copy link:', error);
     const textArea = document.createElement('textarea');
@@ -866,10 +952,14 @@ export async function copyLinkToClipboard(url, successMessage = 'Link copied') {
     textArea.select();
     try {
       document.execCommand('copy');
-      showNotification(successMessage);
+      if (successMessage) showNotification(successMessage);
+      return true;
     } catch (err) {
       console.error('Fallback copy failed:', err);
+      return false;
     }
-    document.body.removeChild(textArea);
+    finally {
+      document.body.removeChild(textArea);
+    }
   }
 }

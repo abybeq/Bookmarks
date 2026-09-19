@@ -152,12 +152,6 @@ body {
   background-color: transparent;
 }
 
-/* Breadcrumb as drop target when dragging a link */
-.breadcrumb-item.breadcrumb-drop-target {
-  background-color: var(--text-primary);
-  color: var(--accent-text);
-}
-
 .breadcrumb-edit-input {
   box-sizing: border-box;
   flex-shrink: 0;
@@ -219,11 +213,17 @@ body.is-dragging * {
   text-align: left;
 }
 
-.context-menu-item:hover {
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
   background-color: var(--bg-secondary);
 }
 
-.context-menu-item-danger:hover {
+.context-menu-item:focus-visible {
+  outline: none;
+}
+
+.context-menu-item-danger:hover,
+.context-menu-item-danger:focus-visible {
   background-color: var(--bg-secondary);
   color: var(--danger-text);
 }
@@ -370,7 +370,9 @@ body.is-dragging * {
   }
 
   .context-menu-item:hover,
+  .context-menu-item:focus-visible,
   .context-menu-item-danger:hover,
+  .context-menu-item-danger:focus-visible,
   .folder-icon-option:hover,
   .folder-icon-option.active {
     background-color: var(--bg-primary);
@@ -697,6 +699,60 @@ body.is-dragging * {
   background-color: var(--bg-secondary);
 }
 
+.list-item.is-deleting {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  filter: blur(7px);
+  transform: scale(0.96);
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    height 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.list-item.is-restoring {
+  animation: restore-list-item 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+@keyframes restore-list-item {
+  from {
+    height: 0;
+    opacity: 0;
+    filter: blur(7px);
+    transform: scale(0.96);
+  }
+
+  to {
+    height: 40px;
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-item.is-deleting {
+    filter: none;
+    transform: none;
+  }
+
+  .list-item.is-restoring {
+    animation-name: restore-list-item-reduced;
+  }
+
+  @keyframes restore-list-item-reduced {
+    from { height: 0; opacity: 0; }
+    to { height: 40px; opacity: 1; }
+  }
+}
+
 .list-item-icon {
   width: 24px;
   height: 24px;
@@ -783,35 +839,32 @@ body.is-dragging * {
   opacity: 1;
 }
 
-/* List item draggable states */
-.list-item.draggable {
-  user-select: none;
-}
-
-.list-item.dragging {
-  opacity: 0.5;
-}
-
-.list-item.dragging[data-type="folder"] .list-item-meta,
-.list-item.dragging[data-type="link"] .list-item-url {
-  visibility: hidden;
-}
-
-/* Drop indicator for reordering */
-.drop-indicator {
+/* Drag sources stay connected so native dragend and cancellation still work. */
+.list-item.draggable { user-select: none; }
+.list-item.drag-source {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(100% - 2rem);
-  height: 2px;
-  background-color: var(--text-primary);
+  opacity: 0;
   pointer-events: none;
-  z-index: 100;
-  border-radius: 1px;
 }
-
-.list-item.folder-drop-target {
-  background-color: var(--bg-secondary);
+.drag-placeholder {
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-radius: 9999px;
+}
+.multi-drop-expansion {
+  width: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 1.25rem;
+}
+.multi-drop-expansion > .list-item {
+  flex-shrink: 0;
+}
+.list-item.folder-drop-target,
+.breadcrumb-item.breadcrumb-drop-target {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--text-primary);
 }
 
 /* Keyboard navigation focus state */
@@ -819,45 +872,58 @@ body.is-dragging * {
   background-color: var(--bg-secondary);
 }
 
-/* Custom drag preview */
+/* Ignore native drag's stale hover until the pointer moves again. */
+body:is(.drag-hover-reset, .is-drag-settling) .list-item:hover:not(.selected):not(.keyboard-focused) {
+  background-color: transparent;
+}
+
+body:is(.drag-hover-reset, .is-drag-settling) .list-item:not(.keyboard-focused) .list-item-url {
+  opacity: 0;
+}
+
+/* Live preview can shrink when a folder accepts the drop. */
 .drag-preview {
-  width: 240px;
-  height: 40px;
+  position: fixed;
+  left: 0;
+  top: 0;
+  will-change: translate;
+  z-index: 10000;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  background-color: var(--bg-secondary);
+  padding: 0 1rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-menu-dialog);
   border-radius: 9999px;
   pointer-events: none;
   overflow: hidden;
+  transition: width 160ms ease, transform 160ms ease;
 }
-
-.drag-preview-icon {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
+.drag-preview.is-compact {
+  width: 48px !important;
+  transform: translateX(var(--compact-offset));
+  padding: 0;
   justify-content: center;
 }
-
-.drag-preview-icon img {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-  border-radius: 4px;
+.drag-preview-count {
+  display: none;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 500;
+  margin-left: 12px;
 }
-
-.drag-preview-icon svg {
-  width: 24px;
-  height: 24px;
-  opacity: 0.8;
+.drag-preview.is-multiple .drag-preview-count { display: block; }
+.drag-preview.is-compact .drag-preview-count { display: block; margin: 0; }
+.drag-preview.is-compact > :not(.drag-preview-count) { display: none; }
+.drag-native-ghost { position: fixed; top: 0; left: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .drag-preview { transition: none; }
 }
 
 .drag-preview-title {
   flex: 1;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
@@ -1447,9 +1513,12 @@ body[data-theme="violet"] { --bg-primary: #FEF7FF; --bg-secondary: #EDE7F2; }
   outline: none;
 }
 
-.theme-option:focus-visible .theme-preview,
-.theme-option.active .theme-preview {
+.theme-option:focus-visible .theme-preview {
   box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--text-primary);
+}
+
+.theme-option.active .theme-preview {
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--preview-bottom-left);
 }
 
 .theme-option[data-theme="frost"] { --preview-top: #D6E3FB; --preview-bottom-left: #2656C9; --preview-bottom-right: #C7C7C7; --bg-secondary: #EDF2FA; --text-primary: #3c3c3c; }

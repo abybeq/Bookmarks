@@ -46,36 +46,36 @@
   </div>
 
   <!-- Context menu for right-click on cards -->
-  <div class="context-menu" id="context-menu">
-    <button class="context-menu-item" id="context-open-all">Open all</button>
-    <button class="context-menu-item" id="context-create-folder">Add folder</button>
-    <button class="context-menu-item" id="context-copy-link">Copy link</button>
-    <button class="context-menu-item" id="context-show-in-folder">Show in folder</button>
-    <button class="context-menu-item" id="context-export">Export</button>
-    <button class="context-menu-item" id="context-edit">Edit</button>
-    <button class="context-menu-item" id="context-change-icon">Change icon</button>
-    <button class="context-menu-item context-menu-item-danger" id="context-delete">Delete</button>
+  <div class="context-menu" id="context-menu" role="menu">
+    <button class="context-menu-item" id="context-open-all" role="menuitem" tabindex="-1">Open all</button>
+    <button class="context-menu-item" id="context-create-folder" role="menuitem" tabindex="-1">Add folder</button>
+    <button class="context-menu-item" id="context-copy-link" role="menuitem" tabindex="-1">Copy link</button>
+    <button class="context-menu-item" id="context-show-in-folder" role="menuitem" tabindex="-1">Show in folder</button>
+    <button class="context-menu-item" id="context-export" role="menuitem" tabindex="-1">Export</button>
+    <button class="context-menu-item" id="context-edit" role="menuitem" tabindex="-1">Edit</button>
+    <button class="context-menu-item" id="context-change-icon" role="menuitem" tabindex="-1">Change icon</button>
+    <button class="context-menu-item context-menu-item-danger" id="context-delete" role="menuitem" tabindex="-1">Delete</button>
   </div>
 
   <div class="context-menu folder-icon-menu" id="folder-icon-menu"></div>
 
   <!-- Context menu for right-click on body/background -->
-  <div class="context-menu" id="body-context-menu">
-    <button class="context-menu-item" id="body-context-add">Add bookmark</button>
-    <button class="context-menu-item" id="body-context-add-folder">Add folder</button>
+  <div class="context-menu" id="body-context-menu" role="menu">
+    <button class="context-menu-item" id="body-context-add" role="menuitem" tabindex="-1">Add bookmark</button>
+    <button class="context-menu-item" id="body-context-add-folder" role="menuitem" tabindex="-1">Add folder</button>
     <div class="context-menu-separator" id="body-context-open-all-separator"></div>
-    <button class="context-menu-item" id="body-context-open-all">Open all</button>
+    <button class="context-menu-item" id="body-context-open-all" role="menuitem" tabindex="-1">Open all</button>
     <div class="context-menu-separator"></div>
-    <button class="context-menu-item" id="body-context-import">Import</button>
-    <button class="context-menu-item" id="body-context-export">Export</button>
+    <button class="context-menu-item" id="body-context-import" role="menuitem" tabindex="-1">Import</button>
+    <button class="context-menu-item" id="body-context-export" role="menuitem" tabindex="-1">Export</button>
     <div class="context-menu-separator"></div>
-    <button class="context-menu-item" id="body-context-theme">Customize</button>
+    <button class="context-menu-item" id="body-context-theme" role="menuitem" tabindex="-1">Customize</button>
   </div>
 
   <!-- Theme picker panel -->
   <div class="theme-picker" id="theme-picker">
     <div class="theme-picker-content">
-      <div class="theme-options">
+      <div class="theme-options" role="group" aria-label="Themes">
         <button type="button" class="theme-option" data-theme="frost" aria-label="Default color">
           <span class="theme-preview theme-preview-frost" aria-hidden="true"></span>
           <span class="theme-name">Default color</span>

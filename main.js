@@ -19,7 +19,8 @@ import {
 import {
   initFaviconCache, loadTheme, initThemePicker, loadFolderIcons, clearLegacySearchHistory,
   fetchPageTitle, createBookmark, deleteBookmark,
-  saveForUndo, performUndo, canUndo, saveCreateForUndo, loadBookmarkSearchEntries
+  saveForUndo, performUndo, canUndo, saveCreateForUndo, loadBookmarkSearchEntries,
+  hideThemePicker, isThemePickerOpen, moveThemePickerSelection, confirmThemePickerSelection
 } from './modules/storage.js';
 
 // Import navigation
@@ -40,10 +41,10 @@ import { initRenderElements, renderItems } from './modules/render.js';
 import {
   initInteractionElements, setRenderCallbacks, openDeleteModal, openDeleteModalMultiple,
   closeDeleteModal, initContextMenu, showContextMenu, hideContextMenu, isContextMenuActive,
+  showContextMenuFromKeyboard,
   initMultiSelect, clearSelection, toggleItemSelection, selectAllItems, openSelectedLinks,
-  handleDragStart, handleDragEnd, handleDragOver, handleDragEnter, handleDragLeave, handleDrop,
-  handleBreadcrumbDragOver, handleBreadcrumbDragEnter, handleBreadcrumbDragLeave,
-  handleBreadcrumbDrop, getModalElements
+  setItemSelection, moveFocusedItems, isKeyboardReorderActive,
+  handleDragStart, getModalElements
 } from './modules/interactions.js';
 
 // Import keyboard
@@ -62,6 +63,33 @@ import { initImportExport, setImportExportCallbacks } from './modules/importExpo
 const itemsGrid = document.getElementById('items-grid');
 const breadcrumb = document.getElementById('breadcrumb');
 const searchInput = document.getElementById('search-input');
+const DELETE_ANIMATION_DURATION_MS = 200;
+
+async function animateVisibleDeletion(itemIds) {
+  const rows = itemIds.flatMap(itemId => Array.from(document.querySelectorAll(
+    `.list-item[data-item-id="${CSS.escape(String(itemId))}"]`
+  )));
+
+  if (rows.length === 0) return [];
+
+  await new Promise(resolve => requestAnimationFrame(() => {
+    rows.forEach(row => row.classList.add('is-deleting'));
+    setTimeout(resolve, DELETE_ANIMATION_DURATION_MS);
+  }));
+
+  return rows;
+}
+
+function animateRestoredItems(itemIds = []) {
+  const rows = itemIds.flatMap(itemId => Array.from(document.querySelectorAll(
+    `.list-item[data-item-id="${CSS.escape(String(itemId))}"]`
+  )));
+
+  rows.forEach(row => row.classList.add('is-restoring'));
+  setTimeout(() => {
+    rows.forEach(row => row.classList.remove('is-restoring'));
+  }, DELETE_ANIMATION_DURATION_MS);
+}
 
 // ============================================
 // CRUD OPERATIONS (Chrome Bookmarks API)
@@ -81,6 +109,8 @@ async function deleteItem(itemId) {
   // Save bookmark data for undo before deleting
   await saveForUndo([itemId], 'delete');
 
+  const animatedRows = await animateVisibleDeletion([itemId]);
+
   const success = await deleteBookmark(itemId);
 
   if (success) {
@@ -90,9 +120,34 @@ async function deleteItem(itemId) {
       renderBreadcrumb();
     }
     renderItems();
+  } else {
+    animatedRows.forEach(row => row.classList.remove('is-deleting'));
   }
 
   return success;
+}
+
+async function cutBookmarks(itemIds) {
+  await saveForUndo(itemIds, 'delete');
+  const animatedRows = await animateVisibleDeletion(itemIds);
+  const results = [];
+
+  for (const itemId of itemIds) {
+    results.push(await deleteBookmark(itemId));
+  }
+
+  if (results.every(Boolean)) {
+    clearSelection();
+    await renderItems();
+    renderBreadcrumb();
+    showNotification(itemIds.length > 1 ? 'Bookmarks cut' : 'Bookmark cut');
+    return true;
+  }
+
+  animatedRows.forEach(row => row.classList.remove('is-deleting'));
+  await renderItems();
+  showNotification('Could not cut all bookmarks');
+  return false;
 }
 
 // Undo function
@@ -105,7 +160,8 @@ async function handleUndo() {
 
   if (result.success) {
     showNotification(result.message);
-    renderItems();
+    await renderItems();
+    animateRestoredItems(result.restoredItemIds);
     renderBreadcrumb();
   }
 }
@@ -197,6 +253,14 @@ function initEventDelegation() {
       e.preventDefault();
       e.stopPropagation();
       toggleItemSelection(itemId, listItem);
+      const focusedIds = getSelectedIdsArray();
+      if (focusedIds.includes(itemId)) {
+        focusItemById(itemId, true);
+      } else if (focusedIds.length > 0) {
+        focusItemById(focusedIds[focusedIds.length - 1], true);
+      } else {
+        resetKeyboardFocus();
+      }
       return;
     }
 
@@ -246,41 +310,6 @@ function initEventDelegation() {
     }
   });
 
-  itemsGrid.addEventListener('dragend', (e) => {
-    const draggable = e.target.closest('.list-item.draggable');
-    if (draggable) {
-      handleDragEnd.call(draggable, e);
-    }
-  });
-
-  itemsGrid.addEventListener('dragover', (e) => {
-    const draggable = e.target.closest('.list-item.draggable');
-    if (draggable) {
-      handleDragOver.call(draggable, e);
-    }
-  });
-
-  itemsGrid.addEventListener('dragenter', (e) => {
-    const draggable = e.target.closest('.list-item.draggable');
-    if (draggable) {
-      handleDragEnter.call(draggable, e);
-    }
-  });
-
-  itemsGrid.addEventListener('dragleave', (e) => {
-    const draggable = e.target.closest('.list-item.draggable');
-    if (draggable) {
-      handleDragLeave.call(draggable, e);
-    }
-  });
-
-  itemsGrid.addEventListener('drop', (e) => {
-    const draggable = e.target.closest('.list-item.draggable');
-    if (draggable) {
-      handleDrop.call(draggable, e);
-    }
-  });
-
   // Prevent link navigation when dragging
   itemsGrid.addEventListener('click', (e) => {
     if (isDragging) {
@@ -307,26 +336,7 @@ function initEventDelegation() {
     }
   });
 
-  // Breadcrumb drag and drop
-  breadcrumb.addEventListener('dragover', (e) => {
-    const item = e.target.closest('.breadcrumb-item');
-    if (item) handleBreadcrumbDragOver.call(item, e);
-  });
 
-  breadcrumb.addEventListener('dragenter', (e) => {
-    const item = e.target.closest('.breadcrumb-item');
-    if (item) handleBreadcrumbDragEnter.call(item, e);
-  });
-
-  breadcrumb.addEventListener('dragleave', (e) => {
-    const item = e.target.closest('.breadcrumb-item');
-    if (item) handleBreadcrumbDragLeave.call(item, e);
-  });
-
-  breadcrumb.addEventListener('drop', (e) => {
-    const item = e.target.closest('.breadcrumb-item');
-    if (item) handleBreadcrumbDrop.call(item, e);
-  });
 }
 
 // ============================================
@@ -343,20 +353,24 @@ function initModalEventListeners() {
 
   deleteConfirmBtn.addEventListener('click', async () => {
     if (deletingItemIds.length > 1) {
+      const itemIds = [...deletingItemIds];
+      closeDeleteModal();
+
       // Save for undo before deleting multiple items
-      await saveForUndo(deletingItemIds, 'delete');
+      await saveForUndo(itemIds, 'delete');
+      await animateVisibleDeletion(itemIds);
 
       // Delete multiple items
-      for (const itemId of deletingItemIds) {
+      for (const itemId of itemIds) {
         await deleteBookmark(itemId);
       }
 
       clearSelection();
       renderItems();
-      closeDeleteModal();
     } else if (deletingItemId) {
-      await deleteItem(deletingItemId);
+      const itemId = deletingItemId;
       closeDeleteModal();
+      await deleteItem(itemId);
     }
   });
 }
@@ -429,6 +443,10 @@ function initBookmarkListeners() {
   });
 
   chrome.bookmarks.onMoved.addListener((id, moveInfo) => {
+    // Drag settlement renders once after all native bookmark moves complete.
+    // Rendering each onMoved event would replace the temporary expanding stack
+    // before its landing animation can finish.
+    if (isDragging || isKeyboardReorderActive()) return;
     // Refresh if move affects current folder
     if (moveInfo.parentId === currentFolderId || moveInfo.oldParentId === currentFolderId) {
       renderItems();
@@ -479,9 +497,17 @@ async function init() {
     openDeleteModalMultiple,
     getSelectionSize,
     getSelectedIds: getSelectedIdsArray,
+    cutBookmarks,
     undo: handleUndo,
     hideContextMenu,
-    isContextMenuActive
+    isContextMenuActive,
+    showContextMenuFromKeyboard,
+    hideThemePicker,
+    isThemePickerOpen,
+    moveThemePickerSelection,
+    confirmThemePickerSelection,
+    setItemSelection,
+    moveFocusedItems
   });
 
   // Initialize event delegation and context menu early for interactivity.

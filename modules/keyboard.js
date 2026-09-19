@@ -31,13 +31,22 @@ let openDeleteModalCallback = null;
 let openDeleteModalMultipleCallback = null;
 let getSelectionSizeCallback = null;
 let getSelectedIdsCallback = null;
+let cutBookmarksCallback = null;
 let undoCallback = null;
 let hideContextMenuCallback = null;
 let isContextMenuActiveCallback = null;
+let showContextMenuFromKeyboardCallback = null;
+let hideThemePickerCallback = null;
+let isThemePickerOpenCallback = null;
+let moveThemePickerSelectionCallback = null;
+let confirmThemePickerSelectionCallback = null;
+let setItemSelectionCallback = null;
+let moveFocusedItemsCallback = null;
+let keyboardSelectionAnchorId = null;
 const FOCUSED_ITEM_TOP_GAP = 140;
 const FOCUSED_ITEM_BOTTOM_GAP = 48;
 
-async function getSelectedBookmarkUrls() {
+async function getSelectedBookmarks() {
   if (!getSelectedIdsCallback) return [];
 
   const selectedIds = getSelectedIdsCallback();
@@ -45,15 +54,19 @@ async function getSelectedBookmarkUrls() {
     return [];
   }
 
-  const urls = [];
+  const bookmarks = [];
   for (const id of selectedIds) {
     const bookmark = await getBookmarkById(id);
     if (bookmark && bookmark.url) {
-      urls.push(bookmark.url);
+      bookmarks.push(bookmark);
     }
   }
 
-  return urls;
+  return bookmarks;
+}
+
+async function getSelectedBookmarkUrls() {
+  return (await getSelectedBookmarks()).map(bookmark => bookmark.url);
 }
 
 export function initKeyboardElements() {
@@ -73,9 +86,17 @@ export function setKeyboardCallbacks(callbacks) {
   openDeleteModalMultipleCallback = callbacks.openDeleteModalMultiple;
   getSelectionSizeCallback = callbacks.getSelectionSize;
   getSelectedIdsCallback = callbacks.getSelectedIds;
+  cutBookmarksCallback = callbacks.cutBookmarks;
   undoCallback = callbacks.undo;
   hideContextMenuCallback = callbacks.hideContextMenu;
   isContextMenuActiveCallback = callbacks.isContextMenuActive;
+  showContextMenuFromKeyboardCallback = callbacks.showContextMenuFromKeyboard;
+  hideThemePickerCallback = callbacks.hideThemePicker;
+  isThemePickerOpenCallback = callbacks.isThemePickerOpen;
+  moveThemePickerSelectionCallback = callbacks.moveThemePickerSelection;
+  confirmThemePickerSelectionCallback = callbacks.confirmThemePickerSelection;
+  setItemSelectionCallback = callbacks.setItemSelection;
+  moveFocusedItemsCallback = callbacks.moveFocusedItems;
 }
 
 // ============================================
@@ -126,12 +147,48 @@ export function focusItem(index, updateInputWithSuggestion = false) {
   keepFocusedItemVisible(item);
 }
 
-export function focusItemById(itemId) {
+export function focusItemById(itemId, resetSelectionAnchor = false) {
   const index = getNavigableItems().findIndex(item => item.dataset.itemId === String(itemId));
   if (index < 0) return false;
 
+  if (resetSelectionAnchor) keyboardSelectionAnchorId = null;
   focusItem(index);
   return true;
+}
+
+function extendKeyboardSelection(direction) {
+  const items = getNavigableItems();
+  if (items.length === 0 || !setItemSelectionCallback) return;
+
+  const selectedIds = new Set(getSelectedIdsCallback?.() || []);
+  let currentIndex = focusedItemIndex;
+  const selectedIndexes = items
+    .map((item, index) => selectedIds.has(item.dataset.itemId) ? index : -1)
+    .filter(index => index >= 0);
+
+  if (currentIndex < 0 || currentIndex >= items.length) {
+    currentIndex = selectedIndexes.length > 0
+      ? (direction > 0 ? Math.max(...selectedIndexes) : Math.min(...selectedIndexes))
+      : (direction > 0 ? 0 : items.length - 1);
+  }
+
+  let anchorIndex = items.findIndex(item => item.dataset.itemId === keyboardSelectionAnchorId);
+  if (anchorIndex < 0) {
+    if (selectedIndexes.length > 1) {
+      const firstSelected = Math.min(...selectedIndexes);
+      const lastSelected = Math.max(...selectedIndexes);
+      anchorIndex = currentIndex === firstSelected ? lastSelected : firstSelected;
+    } else {
+      anchorIndex = currentIndex;
+    }
+    keyboardSelectionAnchorId = items[anchorIndex]?.dataset.itemId || null;
+  }
+  const nextIndex = Math.min(Math.max(currentIndex + direction, 0), items.length - 1);
+  const rangeStart = Math.min(anchorIndex, nextIndex);
+  const rangeEnd = Math.max(anchorIndex, nextIndex);
+  const rangeIds = items.slice(rangeStart, rangeEnd + 1).map(item => item.dataset.itemId);
+  setItemSelectionCallback(rangeIds);
+  focusItem(nextIndex);
 }
 
 export function updateSearchIconForFocusedItem(item) {
@@ -325,6 +382,7 @@ export async function activateFocusedItem(openInNewTab = false) {
 }
 
 export function resetKeyboardFocus() {
+  keyboardSelectionAnchorId = null;
   setFocusedItemIndex(-1);
   clearItemFocus();
 
@@ -379,7 +437,14 @@ export function initKeyboardShortcuts() {
         return;
       }
 
+      if (isThemePickerOpenCallback && isThemePickerOpenCallback()) {
+        e.preventDefault();
+        if (hideThemePickerCallback) hideThemePickerCallback();
+        return;
+      }
+
       if (getSelectionSizeCallback && getSelectionSizeCallback() > 0) {
+        keyboardSelectionAnchorId = null;
         if (clearSelectionCallback) clearSelectionCallback();
         return;
       }
@@ -394,12 +459,53 @@ export function initKeyboardShortcuts() {
         return;
       }
 
+      if (currentFolderId === ROOT_FOLDER_ID && focusedItemIndex >= 0) {
+        e.preventDefault();
+        resetKeyboardFocus();
+        return;
+      }
+
       // Navigate to parent folder
       if (currentFolderId !== ROOT_FOLDER_ID && navigateToFolderCallback) {
         const folderIdToRestore = currentFolderId;
         const currentFolder = await getFolderById(currentFolderId);
         const parentFolderId = currentFolder ? currentFolder.parentId : ROOT_FOLDER_ID;
         navigateToFolderCallback(parentFolderId || ROOT_FOLDER_ID, true, true, false, folderIdToRestore);
+      }
+    }
+
+    if (isThemePickerOpenCallback?.()) {
+      const navigationKeys = [
+        'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'
+      ];
+
+      if (navigationKeys.includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveThemePickerSelectionCallback?.(e.key);
+        return;
+      }
+
+      if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        e.stopPropagation();
+        confirmThemePickerSelectionCallback?.();
+        return;
+      }
+    }
+
+    // Open the relevant context menu without leaving the keyboard flow.
+    if ((e.metaKey || e.ctrlKey) && (e.code === 'KeyE' || e.key.toLowerCase() === 'e')) {
+      const activeElement = document.activeElement;
+      const isInputFocused = activeElement.tagName === 'INPUT' ||
+                             activeElement.tagName === 'TEXTAREA' ||
+                             activeElement.isContentEditable;
+      const isModalOpen = deleteModalOverlay.classList.contains('active');
+
+      if (!isInputFocused && !isModalOpen && showContextMenuFromKeyboardCallback) {
+        e.preventDefault();
+        await showContextMenuFromKeyboardCallback();
+        return;
       }
     }
 
@@ -450,6 +556,39 @@ export function initKeyboardShortcuts() {
               return;
             }
           }
+        }
+      }
+    }
+
+    // Cut focused/selected bookmarks with Cmd/Ctrl + X
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'x') {
+      const activeElement = document.activeElement;
+      const isInputFocused = activeElement.tagName === 'INPUT' ||
+                             activeElement.tagName === 'TEXTAREA' ||
+                             activeElement.isContentEditable;
+      const isModalOpen = deleteModalOverlay.classList.contains('active');
+
+      if (!isInputFocused && !isModalOpen && !isSearchMode && cutBookmarksCallback) {
+        let bookmarks = await getSelectedBookmarks();
+
+        if (bookmarks.length === 0) {
+          const item = getNavigableItems()[focusedItemIndex];
+          if (item?.dataset.type === 'link') {
+            const bookmark = await getBookmarkById(item.dataset.itemId);
+            if (bookmark?.url) bookmarks = [bookmark];
+          }
+        }
+
+        if (bookmarks.length > 0) {
+          e.preventDefault();
+          const copied = await copyLinkToClipboard(
+            bookmarks.map(bookmark => bookmark.url).join('\n'),
+            null
+          );
+          if (copied) {
+            await cutBookmarksCallback(bookmarks.map(bookmark => bookmark.id));
+          }
+          return;
         }
       }
     }
@@ -531,11 +670,30 @@ export function initKeyboardShortcuts() {
 
       if (!isOtherInputFocused) {
         e.preventDefault();
-        if (e.metaKey && focusedItemIndex >= 0) {
+        if (e.altKey && !isSearchMode) {
+          const focusedId = getNavigableItems()[focusedItemIndex]?.dataset.itemId;
+          const selectedIds = getSelectedIdsCallback?.() || [];
+          const focusedIds = selectedIds.length > 0
+            ? selectedIds
+            : (focusedId ? [focusedId] : []);
+          keyboardSelectionAnchorId = null;
+          const moved = focusedIds.length > 0 && await moveFocusedItemsCallback?.(
+            e.key === 'ArrowDown' ? 1 : -1,
+            focusedIds
+          );
+          if (moved && focusedId) focusItemById(focusedId);
+        } else if (e.shiftKey && !isSearchMode) {
+          extendKeyboardSelection(e.key === 'ArrowDown' ? 1 : -1);
+        } else if (e.metaKey && focusedItemIndex >= 0) {
+          keyboardSelectionAnchorId = null;
           focusAdjacentGroup(e.key === 'ArrowDown' ? 1 : -1);
         } else if (e.key === 'ArrowDown') {
+          keyboardSelectionAnchorId = null;
+          if ((getSelectionSizeCallback?.() || 0) > 0) clearSelectionCallback?.();
           focusNextItem();
         } else {
+          keyboardSelectionAnchorId = null;
+          if ((getSelectionSizeCallback?.() || 0) > 0) clearSelectionCallback?.();
           focusPreviousItem();
         }
       }

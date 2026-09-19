@@ -4,7 +4,8 @@
 
 import {
   ROOT_FOLDER_ID, currentFolderId, isSearchMode, inlineFolderMode, inlineFolderTargetId, inlineFolderParentId,
-  inlineFolderDraft, inlineFolderSaving, setInlineFolderDraft, setInlineFolderSaving,
+  inlineFolderDraft, inlineFolderSaving, inlineFolderRenameUndoEnabled,
+  setInlineFolderDraft, setInlineFolderSaving,
   resetInlineFolderState, inlineBookmarkMode, inlineBookmarkTargetId, inlineBookmarkParentId,
   inlineBookmarkDraftUrl, inlineBookmarkDraftTitle, inlineBookmarkSaving,
   setInlineBookmarkDraftUrl, setInlineBookmarkDraftTitle, setInlineBookmarkSaving,
@@ -200,8 +201,8 @@ async function commitInlineFolderCreate(title, parentId) {
   }
 }
 
-async function commitInlineFolderRename(folderId, newTitle) {
-  await saveEditForUndo(folderId);
+async function commitInlineFolderRename(folderId, newTitle, undoEnabled = true) {
+  if (undoEnabled) await saveEditForUndo(folderId);
   await updateBookmark(folderId, newTitle);
 }
 
@@ -236,6 +237,7 @@ function attachInlineFolderInputHandlers() {
     const capturedMode = mode;
     const capturedFolderId = folderId;
     const capturedParentId = parentId;
+    const capturedRenameUndoEnabled = inlineFolderRenameUndoEnabled;
 
     // Clear inline UI before any async work to avoid duplicate renders
     resetInlineFolderState();
@@ -245,7 +247,7 @@ function attachInlineFolderInputHandlers() {
         if (capturedMode === 'create') {
           await commitInlineFolderCreate(value, capturedParentId);
         } else if (capturedMode === 'rename' && capturedFolderId) {
-          await commitInlineFolderRename(capturedFolderId, value);
+          await commitInlineFolderRename(capturedFolderId, value, capturedRenameUndoEnabled);
         }
       }
     } finally {
@@ -395,7 +397,13 @@ function attachInlineBookmarkInputHandlers() {
   };
 
   const onKeyDown = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Tab' && mode === 'edit' && inputs.length > 1) {
+      e.preventDefault();
+      const currentIndex = inputs.indexOf(e.currentTarget);
+      const direction = e.shiftKey ? -1 : 1;
+      const nextIndex = (currentIndex + direction + inputs.length) % inputs.length;
+      inputs[nextIndex].focus({ preventScroll: true });
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       finish(true);
     } else if (e.key === 'Escape') {
