@@ -250,7 +250,7 @@ export function initContextMenu(deleteItemFn, navigateToFolder, exitSearchMode) 
     const itemId = contextMenuItemId;
     hideContextMenu();
 
-    if (itemId) {
+    if (itemId && !isSearchMode) {
       const item = await getBookmarkById(itemId);
       if (item && !item.url) {
         startInlineFolderRename(itemId);
@@ -314,6 +314,10 @@ export function initContextMenu(deleteItemFn, navigateToFolder, exitSearchMode) 
   document.getElementById('context-change-icon').addEventListener('click', (e) => {
     e.stopPropagation();
     const itemId = contextMenuItemId;
+    if (isSearchMode) {
+      hideContextMenu();
+      return;
+    }
     const iconElement = getFolderIconAnchorElement(itemId);
     const iconRect = iconElement ? iconElement.getBoundingClientRect() : e.currentTarget.getBoundingClientRect();
     hideContextMenu();
@@ -560,7 +564,7 @@ export async function showContextMenu(x, y, itemId, anchorElement = null) {
     showInFolderBtn.style.display = isSearchMode ? 'flex' : 'none';
     exportBtn.style.display = 'none';
     editBtn.textContent = 'Edit';
-    editBtn.style.display = 'flex';
+    editBtn.style.display = isSearchMode ? 'none' : 'flex';
     changeIconBtn.style.display = 'none';
     deleteBtn.style.display = 'flex';
   } else if (isFolder) {
@@ -573,8 +577,8 @@ export async function showContextMenu(x, y, itemId, anchorElement = null) {
     showInFolderBtn.style.display = 'none';
     exportBtn.style.display = 'none';
     editBtn.textContent = 'Rename';
-    editBtn.style.display = 'flex';
-    changeIconBtn.style.display = 'flex';
+    editBtn.style.display = isSearchMode ? 'none' : 'flex';
+    changeIconBtn.style.display = isSearchMode ? 'none' : 'flex';
     deleteBtn.style.display = 'flex';
   } else {
     openAllBtn.style.display = 'none';

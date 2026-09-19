@@ -4,7 +4,7 @@ Status: prepared locally; not submitted.
 
 ## Name
 
-better bookmarks
+Better Bookmarks
 
 ## Summary
 
@@ -36,9 +36,9 @@ Support: dima@hamayunau.com
 - Primary language: English.
 - Suggested category: Productivity; choose the closest available category in the dashboard.
 - Support email: dima@hamayunau.com.
-- Privacy policy URL: pending hosting of `PRIVACY.md`.
+- Privacy policy URL: https://bookmarks.hamayunau.com/privacy/.
 - Distribution, countries and free/paid declaration: confirm before submission.
-- Required images: 128 × 128 icon, 440 × 280 promotional image, at least one 1280 × 800 or 640 × 400 screenshot.
+- Prepared images: `store/assets/icon128.png`, `store/assets/promo-440x280.png` and three 1280 × 800 screenshots in `store/assets/`.
 
 ## Single purpose
 
