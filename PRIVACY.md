@@ -1,6 +1,6 @@
 # Privacy policy for better bookmarks
 
-Last updated: September 14, 2026
+Last updated: September 21, 2026
 
 better bookmarks is a browser extension maintained by Dima Hamayunau. It replaces the new tab page with a bookmark manager. Contact: dima@hamayunau.com.
 
@@ -8,7 +8,7 @@ better bookmarks is a browser extension maintained by Dima Hamayunau. It replace
 
 The extension reads your bookmark titles, URLs and folder structure to display, search and organize them. When you add, edit, move, import or delete bookmarks, it changes the browser's own bookmarks. Those changes can also be synchronized by your browser if you have enabled its bookmark synchronization.
 
-The extension reads matching browsing-history entries, including page titles, URLs and visit times, to display search results. It does not send your browser history to the developer.
+The extension reads matching browsing-history entries, including page titles, URLs and visit times, to display search results. When you explicitly choose Delete on a history result, the extension removes that URL from your browser history. It does not send your browser history to the developer.
 
 Theme preferences and folder-icon selections are saved in extension storage on your device. Favicon images and their domain names are cached locally in IndexedDB; cached entries are treated as expired after seven days. Temporary navigation, selection and undo state is held in memory. Search queries are not saved by the extension; queries saved by an earlier version are removed when the extension page next opens.
 
@@ -20,7 +20,7 @@ To display website icons, the extension sends website domain names to Favicon.im
 
 When you add a link, the extension may request that URL to read its page title. The destination website receives the request and ordinary network information, including your IP address. Some websites block these requests; the extension can fall back to a title derived from the URL.
 
-When you choose Google in Ask, the extension opens Google with your query. When you choose ChatGPT, it opens chat.com with your text in the URL to prefill the ChatGPT input without automatically submitting the message. When you open a bookmark, the browser connects to the destination website. These services have their own privacy policies.
+When you choose Search, Chrome sends your query to the browser's default search provider. When you choose ChatGPT, the extension opens chat.com with your text in the URL to prefill the ChatGPT input without automatically submitting the message. When you open a bookmark, the browser connects to the destination website. These services have their own privacy policies.
 
 ## Developer access and use
 

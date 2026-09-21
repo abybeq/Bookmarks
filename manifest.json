@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "better bookmarks",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A new tab page for your bookmarks. Organize folders, search bookmarks and browsing history, and navigate with your keyboard.",
   "permissions": [
     "storage",

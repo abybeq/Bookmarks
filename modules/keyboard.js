@@ -11,7 +11,7 @@ import { isUrl, navigateToUrl, openAskTarget } from './utils.js';
 import { getFaviconUrl, copyLinkToClipboard, getBookmarkById } from './storage.js';
 import { getFolderById } from './navigation.js';
 import {
-  getNavigableItems, setSearchIcon, setSearchResultType, showGoogleSearchTarget, showAskTarget, showMoreHistory,
+  getNavigableItems, setSearchIcon, setSearchResultType, showAskTarget, showMoreHistory,
   markSearchFocusNavigated
 } from './search.js';
 
@@ -269,7 +269,7 @@ export function focusNextItem() {
 }
 
 // Negative indexes represent Ask targets in the input above the results:
-// -1 = Google, -2 = ChatGPT. Down reverses the same path back to results.
+// -1 = Search, -2 = ChatGPT. Down reverses the same path back to results.
 function focusAskTarget(index) {
   markSearchFocusNavigated();
   searchInput.value = originalSearchQuery;
@@ -277,7 +277,7 @@ function focusAskTarget(index) {
   setFocusedItemIndex(index);
   searchInput.focus();
   searchInput.selectionStart = searchInput.selectionEnd = originalSearchQuery.length;
-  showAskTarget(index === -2 ? 'chatgpt' : 'google');
+  showAskTarget(index === -2 ? 'chatgpt' : 'search');
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
@@ -741,7 +741,7 @@ export function initKeyboardShortcuts() {
         if (isSearchMode && searchQuery.trim() && e.key === 'Enter') {
           e.preventDefault();
           const queryToSearch = searchQuery.trim();
-          openAskTarget(queryToSearch, focusedItemIndex === -2 ? 'chatgpt' : 'google', e.metaKey || e.ctrlKey);
+          openAskTarget(queryToSearch, focusedItemIndex === -2 ? 'chatgpt' : 'search', e.metaKey || e.ctrlKey);
           return;
         }
       }

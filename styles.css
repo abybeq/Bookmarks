@@ -1091,7 +1091,7 @@ body.search-active .breadcrumb {
   display: none !important;
 }
 
-/* Google suggestions section */
+/* Search destinations section */
 .suggestions-section {
   display: flex;
   flex-direction: column;

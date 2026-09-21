@@ -76,9 +76,9 @@ function fakeElement(tagName = 'DIV') {
 }
 for (const id of ids) elements.set(id, fakeElement(id === 'search-input' ? 'INPUT' : 'DIV'));
 const query = 'Что такое love? & + # / 😀';
-const rows = ['google', 'chatgpt'].map(provider => {
+const rows = ['search', 'chatgpt'].map(provider => {
   const element = fakeElement();
-  element.dataset = { type: provider === 'google' ? 'suggestion' : 'chatgpt', provider, suggestion: query };
+  element.dataset = { type: provider === 'search' ? 'suggestion' : 'chatgpt', provider, suggestion: query };
   element.classList.add('suggestion-item');
   return element;
 });
@@ -90,6 +90,7 @@ context.document = {
   addEventListener: (event, listener) => listeners.set(event, listener)
 };
 const opened = [];
+const webSearches = [];
 const scrolls = [];
 context.window = {
   location: { href: '' }, innerHeight: 900,
@@ -97,16 +98,19 @@ context.window = {
   scrollBy() {}, scrollTo: options => scrolls.push(options.top)
 };
 context.navigator = { clipboard: { writeText: async value => { context.copiedText = value; } } };
-context.chrome = { bookmarks: new Proxy({
-  getTree: async () => [],
-  get: async id => [{
-    id: String(id),
-    title: `Bookmark ${id}`,
-    url: String(id) === '1' ? undefined : `https://${id}.test`
-  }]
-}, {
-  get: (target, key) => target[key] || { addListener() {} }
-}) };
+context.chrome = {
+  bookmarks: new Proxy({
+    getTree: async () => [],
+    get: async id => [{
+      id: String(id),
+      title: `Bookmark ${id}`,
+      url: String(id) === '1' ? undefined : `https://${id}.test`
+    }]
+  }, {
+    get: (target, key) => target[key] || { addListener() {} }
+  }),
+  search: { query: async info => { webSearches.push(info); } }
+};
 const keyboard = load(path.join(root, 'modules/keyboard.js'));
 await keyboard.evaluate();
 const searchUI = load(path.join(root, 'modules/search.js')).namespace;
@@ -121,11 +125,11 @@ keyboard.namespace.initKeyboardElements();
 keyboard.namespace.initKeyboardShortcuts();
 keyboard.namespace.focusItem(0);
 for (const [move, expectedIndex, expectedLabel] of [
-  ['focusPreviousItem', -1, 'Google'],
+  ['focusPreviousItem', -1, 'Search'],
   ['focusPreviousItem', -2, 'ChatGPT'],
   ['focusPreviousItem', -2, 'ChatGPT'],
-  ['focusNextItem', -1, 'Google'],
-  ['focusNextItem', 0, 'Google'],
+  ['focusNextItem', -1, 'Search'],
+  ['focusNextItem', 0, 'Search'],
   ['focusNextItem', 1, 'ChatGPT']
 ]) {
   keyboard.namespace[move]();
@@ -134,27 +138,29 @@ for (const [move, expectedIndex, expectedLabel] of [
   assert.equal(elements.get('search-input').value, query);
 }
 assert(scrolls.length >= 3 && scrolls.every(top => top === 0));
-function verifyDestination(href, provider) {
+function verifyChatGPTDestination(href) {
   const url = new URL(href);
-  assert.equal(url.hostname, provider === 'chatgpt' ? 'chat.com' : 'www.google.com');
+  assert.equal(url.hostname, 'chat.com');
   assert.equal(url.searchParams.get('q'), query);
-  if (provider === 'chatgpt') assert.equal(url.searchParams.get('submit'), 'false');
+  assert.equal(url.searchParams.get('submit'), 'false');
 }
 await keyboard.namespace.activateFocusedItem();
-verifyDestination(context.window.location.href, 'chatgpt');
+verifyChatGPTDestination(context.window.location.href);
 keyboard.namespace.focusItem(0);
 await keyboard.namespace.activateFocusedItem(true);
-verifyDestination(opened.at(-1).url, 'google');
+assert.equal(webSearches.at(-1).text, query);
+assert.equal(webSearches.at(-1).disposition, 'NEW_TAB');
 keyboard.namespace.focusPreviousItem();
 keyboard.namespace.focusPreviousItem();
 await listeners.get('keydown')({ key: 'Enter', preventDefault() {}, metaKey: true });
-verifyDestination(opened.at(-1).url, 'chatgpt');
+verifyChatGPTDestination(opened.at(-1).url);
 assert.equal(opened.at(-1).target, '_blank');
-for (const provider of ['google', 'chatgpt']) {
-  utils.openAskTarget(query, provider);
-  verifyDestination(context.window.location.href, provider);
-}
-console.log('Passed: Ask target order, labels, return navigation, scroll-to-top, Enter, new tabs and Unicode URL encoding.');
+await utils.openAskTarget(query, 'search');
+assert.equal(webSearches.at(-1).text, query);
+assert.equal(webSearches.at(-1).disposition, 'CURRENT_TAB');
+utils.openAskTarget(query, 'chatgpt');
+verifyChatGPTDestination(context.window.location.href);
+console.log('Passed: Search target order, labels, default-provider API, return navigation, scroll-to-top, Enter, new tabs and Unicode URL encoding.');
 
 state.setIsSearchMode(false);
 state.setSearchQuery('');

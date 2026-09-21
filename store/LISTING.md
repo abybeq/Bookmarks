@@ -1,6 +1,6 @@
 # Chrome Web Store copy
 
-Status: version 1.0.0 submitted on September 18, 2026; pending review. Item ID: `japemljmgniakiecpfjnhlchkplmcien`. Manual publishing is selected.
+Status: version 1.0.0 was rejected on September 21, 2026 because the `search` permission had no active API call. Version 1.0.1 fixes that issue and is being prepared for resubmission. Item ID: `japemljmgniakiecpfjnhlchkplmcien`. Manual publishing is selected.
 
 ## Name
 
@@ -16,7 +16,7 @@ Better Bookmarks turns your new tab into a focused workspace for the bookmarks a
 
 What you can do:
 
-- Search bookmarks and matching browsing history in one place.
+- Search bookmarks and matching browsing history in one place, and remove individual history results when you choose.
 - Create, rename, move and delete bookmarks and folders.
 - Organize items with drag and drop or select several items at once.
 - Navigate folders and search results with your keyboard.
@@ -51,7 +51,7 @@ Provide a new tab bookmark manager for organizing, finding and opening saved web
 | Permission | Explanation for reviewers |
 | --- | --- |
 | bookmarks | Read, create, edit, move and delete bookmarks and folders when the user manages them in the new tab page. |
-| history | Search browsing history and display matching titles, URLs and visit times alongside bookmark search results. |
+| history | Search browsing history, display matching titles, URLs and visit times alongside bookmark results, and remove an individual history URL only when the user explicitly chooses Delete. |
 | storage | Save theme preferences and folder-icon selections on the user's device. |
 | tabGroups | Name and configure a tab group when the user chooses to open a folder or selected links together. |
 | contextMenus | Add an Open Better Bookmarks item to the browser's page context menu. |
@@ -63,16 +63,16 @@ All six API permissions have call sites in the active code. Host match patterns 
 ## Privacy practices draft
 
 - Remote code: No. JavaScript is bundled; fetched HTML is read for its title and is not executed.
-- Data handled: bookmarks and URLs, browsing-history matches, settings, user-supplied import/paste content, cached favicons and domains.
+- Data handled: bookmarks and URLs, browsing-history matches and user-requested deletion of individual history URLs, settings, user-supplied import/paste content, cached favicons and domains.
 - External transmission: domain names to Favicon.im for icons, requests to added URLs for page titles, user-selected searches to the default search provider.
 - No developer analytics, advertising or data-collection backend found in the active package.
 - Do not declare that no data is handled or transmitted. Select the dashboard's applicable website-content / web-history categories based on the exact wording shown at submission.
-- Privacy policy and disclosures must match this behavior. Review whether favicon-domain transmission needs a prominent in-product disclosure before release.
+- Privacy policy and dashboard disclosures must match this behavior. Favicon-domain transmission is directly tied to the visible favicon feature and is disclosed in the Store copy and privacy policy; keep those disclosures prominent and consistent.
 
 ## Reviewer test instructions
 
 No login, subscription or external credentials are required.
 
-Use a test browser profile with disposable bookmarks. Open a new tab after installation. Add a bookmark and a folder; edit and move them. Enter a folder and navigate back with the keyboard. Type to search bookmark titles and browsing history. Open the context menu to change a folder icon and use the theme picker to change colors. Reload the page and confirm saved settings. Test import/export and open links as a group using only disposable sample data. The toolbar icon and page context menu should open the extension.
+Use a test browser profile with disposable bookmarks and browsing history. Open a new tab after installation. Add a bookmark and a folder; edit and move them. Enter a folder and navigate back with the keyboard. Type to search bookmark titles and browsing history; use the context menu on a disposable history result to verify Delete from history. Open the context menu to change a folder icon and use the theme picker to change colors. Reload the page and confirm saved settings. Test import/export and open links as a group using only disposable sample data. The toolbar icon and page context menu should open the extension.
 
 Network access is used for favicons and automatic page titles. Website CORS restrictions or offline mode may prevent those resources from loading; bookmark storage is provided by the browser.

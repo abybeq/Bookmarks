@@ -126,14 +126,18 @@ export function navigateToUrl(url, openInNewTab = false) {
   }
 }
 
-// Keep both click and keyboard activation on the same Ask destinations.
-export function openAskTarget(text, provider = 'google', openInNewTab = false) {
+// Keep both click and keyboard activation on the same Search destinations.
+export function openAskTarget(text, provider = 'search', openInNewTab = false) {
   const query = text.trim();
   if (!query) return;
-  const url = provider === 'chatgpt'
-    ? `https://chat.com/?q=${encodeURIComponent(query)}&submit=false`
-    : `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-  navigateToUrl(url, openInNewTab);
+  if (provider === 'chatgpt') {
+    navigateToUrl(`https://chat.com/?q=${encodeURIComponent(query)}&submit=false`, openInNewTab);
+    return;
+  }
+  return chrome.search.query({
+    text: query,
+    disposition: openInNewTab ? 'NEW_TAB' : 'CURRENT_TAB'
+  }).catch(error => console.error('Error opening web search:', error));
 }
 
 // ============================================

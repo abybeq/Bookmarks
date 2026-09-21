@@ -19,7 +19,6 @@ const HISTORY_PAGE_SIZE = 20;
 let historyLimit = INITIAL_HISTORY_LIMIT;
 let historyLimitQuery = '';
 let loadingHistoryId = null;
-const GOOGLE_SEARCH_URL = 'https://www.google.com';
 const CHATGPT_FAVICON_URL = 'icons/chatgpt.webp';
 let searchBar;
 let searchInput;
@@ -86,7 +85,7 @@ export function setSearchResultType(type = '') {
     'browser-history': 'History',
     'history-more': 'History',
     'chrome-page': 'Chrome page',
-    suggestion: 'Google',
+    suggestion: 'Search',
     chatgpt: 'ChatGPT',
     url: 'Website'
   };
@@ -95,14 +94,14 @@ export function setSearchResultType(type = '') {
   searchResultType.hidden = !label;
 }
 
-export function showAskTarget(provider = 'google') {
+export function showAskTarget(provider = 'search') {
   if (provider === 'chatgpt') setSearchIcon('favicon', CHATGPT_FAVICON_URL);
-  else setSearchIcon('favicon', getFaviconUrl(GOOGLE_SEARCH_URL));
+  else setSearchIcon('search');
   setSearchResultType(provider === 'chatgpt' ? 'chatgpt' : 'suggestion');
 }
 
-export function showGoogleSearchTarget() {
-  showAskTarget('google');
+export function showSearchTarget() {
+  showAskTarget('search');
 }
 
 export function enterSearchMode(initialChar = '', focusItem) {
@@ -118,7 +117,7 @@ export function enterSearchMode(initialChar = '', focusItem) {
   searchInput.value = initialChar;
   searchInput.focus();
   searchInput.selectionStart = searchInput.selectionEnd = initialChar.length;
-  showGoogleSearchTarget();
+  showSearchTarget();
   renderSearchResults(focusItem);
 }
 
@@ -248,14 +247,14 @@ function updateRow(element, data) {
   }
   if (data.type === 'suggestion' || data.type === 'chatgpt') {
     element.dataset.suggestion = data.title;
-    element.dataset.provider = data.type === 'chatgpt' ? 'chatgpt' : 'google';
+    element.dataset.provider = data.type === 'chatgpt' ? 'chatgpt' : 'search';
   }
   const iconKey = data.type === 'chatgpt' ? CHATGPT_FAVICON_URL : data.type === 'history-more' ? 'history-more' : data.type === 'folder' ? getFolderIconName(data.itemId)
-    : data.type === 'suggestion' ? GOOGLE_SEARCH_URL : data.url;
+    : data.type === 'suggestion' ? 'search' : data.url;
   if (!previous || previous.iconKey !== iconKey) {
     element.querySelector('.list-item-icon').innerHTML = data.type === 'chatgpt' ? `<img src="${CHATGPT_FAVICON_URL}" alt="">` : data.type === 'history-more' ? getIconSvg('chevron-down', { fill: 'var(--text-secondary)' }) : data.type === 'folder'
       ? getFolderIconSvg(iconKey)
-      : data.type === 'suggestion' ? getFaviconHtml(GOOGLE_SEARCH_URL)
+      : data.type === 'suggestion' ? searchIconSvgHtml
         : getFaviconHtml(data.url, data.type === 'url' ? 'globe' : 'bookmark');
   }
   element.searchRow = { ...data, iconKey };
@@ -346,7 +345,7 @@ function renderResults(query, matches, history, focusItem, preserveFocus) {
     groups.push(queryIsUrl
       ? ['url', 'Open', [row('url', 'url', query, normalizeUrl(query))]]
       : ['suggestions', 'Ask', [
-        row('query', 'suggestion', query, '', 'Google'),
+        row('query', 'suggestion', query, '', 'Search'),
         row('chatgpt', 'chatgpt', query, '', 'ChatGPT')
       ]]);
   }
@@ -387,7 +386,7 @@ function renderResults(query, matches, history, focusItem, preserveFocus) {
     else setFocusedItemIndex(-1);
   }
   if (!items.length) {
-    showGoogleSearchTarget();
+    showSearchTarget();
   }
 }
 
