@@ -114,6 +114,24 @@ context.chrome = {
 const keyboard = load(path.join(root, 'modules/keyboard.js'));
 await keyboard.evaluate();
 const searchUI = load(path.join(root, 'modules/search.js')).namespace;
+const candidates = [
+  ['url', 'Unrelated', 'https://figma-design.example'],
+  ['middle', 'My Figma Design', 'https://example.com'],
+  ['prefix', 'Figma Design System', 'https://example.com'],
+  ['exact', 'Figma Design', 'https://example.com'],
+  ['mixed', 'Figma', 'https://design.example'],
+  ['miss', 'Figma', 'https://example.com']
+].map(([id, title, url]) => ({ item: { id, title, url }, title: title.toLowerCase(), url: url.toLowerCase() }));
+assert.deepEqual(
+  Array.from(searchUI.rankBookmarkEntries(candidates, 'design figma'), entry => entry.item.id),
+  ['exact', 'prefix', 'middle', 'mixed', 'url']
+);
+assert.deepEqual(
+  Array.from(searchUI.rankBookmarkEntries(candidates, 'figma design'), entry => entry.item.id),
+  ['exact', 'prefix', 'middle', 'mixed', 'url']
+);
+assert.deepEqual(Array.from(searchUI.highlightRanges('Figma Design', ['figma', 'design']), range => Array.from(range)), [[0, 5], [6, 12]]);
+assert.deepEqual(Array.from(searchUI.highlightRanges('foobar', ['foo', 'oob']), range => Array.from(range)), [[0, 4]]);
 searchUI.initSearchElements();
 await new Promise(resolve => setImmediate(resolve));
 const state = load(path.join(root, 'modules/state.js')).namespace;

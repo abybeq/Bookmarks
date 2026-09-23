@@ -197,6 +197,8 @@ body.is-dragging * {
 }
 
 .context-menu-item {
+  position: relative;
+  z-index: 1;
   width: 100%;
   display: flex;
   align-items: center;
@@ -215,7 +217,7 @@ body.is-dragging * {
 
 .context-menu-item:hover,
 .context-menu-item:focus-visible {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 .context-menu-item:focus-visible {
@@ -224,11 +226,35 @@ body.is-dragging * {
 
 .context-menu-item-danger:hover,
 .context-menu-item-danger:focus-visible {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
   color: var(--danger-text);
 }
 
+.menu-highlight {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  border-radius: 9999px;
+  background-color: var(--bg-secondary);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+.menu-highlight.active {
+  opacity: 1;
+}
+
+.menu-highlight.menu-highlight-reset {
+  transition-property: opacity;
+}
+
 .context-menu-separator {
+  position: relative;
+  z-index: 1;
   height: 1px;
   background-color: var(--border-color);
   margin: 8px -8px;
@@ -290,7 +316,7 @@ body.is-dragging * {
 .folder-icon-search-container {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   flex: 0 0 auto;
   height: 48px;
   padding: 0.5rem;
@@ -324,6 +350,7 @@ body.is-dragging * {
 }
 
 .folder-icon-grid {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(6, 32px);
   gap: 0.25rem;
@@ -332,6 +359,8 @@ body.is-dragging * {
 }
 
 .folder-icon-option {
+  position: relative;
+  z-index: 1;
   width: 32px;
   height: 32px;
   display: flex;
@@ -355,7 +384,7 @@ body.is-dragging * {
 
 .folder-icon-option:hover,
 .folder-icon-option.active {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -366,7 +395,11 @@ body.is-dragging * {
 
   .context-menu-item,
   .folder-icon-option {
-    background-color: var(--bg-secondary);
+    background-color: transparent;
+  }
+
+  .menu-highlight {
+    background-color: var(--bg-primary);
   }
 
   .context-menu-item:hover,
@@ -375,7 +408,7 @@ body.is-dragging * {
   .context-menu-item-danger:focus-visible,
   .folder-icon-option:hover,
   .folder-icon-option.active {
-    background-color: var(--bg-primary);
+    background-color: transparent;
   }
 
   .folder-icon-search-container {
@@ -561,6 +594,58 @@ body.is-dragging * {
   position: relative;
 }
 
+.list-view::before,
+.list-view::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  border-radius: 9999px;
+  background-color: var(--bg-secondary);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+.list-view::before {
+  width: var(--list-hover-width, 100%);
+  height: var(--list-hover-height, 40px);
+  transform: translate3d(
+    var(--list-hover-x, 0),
+    var(--list-hover-y, 0),
+    0
+  );
+}
+
+.list-view::after {
+  width: var(--list-focus-width, 100%);
+  height: var(--list-focus-height, 40px);
+  transform: translate3d(
+    var(--list-focus-x, 0),
+    var(--list-focus-y, 0),
+    0
+  );
+}
+
+.list-view.list-hover-active::before {
+  opacity: 1;
+}
+
+.list-view.list-hover-reset::before {
+  transition-property: opacity;
+}
+
+.list-view.list-focus-active::after {
+  opacity: 1;
+}
+
+.list-view.list-focus-reset::after {
+  transition-property: opacity;
+}
+
 /* Empty state styles */
 .list-view.empty-state-container {
   position: fixed;
@@ -598,6 +683,7 @@ body.is-dragging * {
   display: flex;
   flex-direction: column;
   position: relative;
+  z-index: 1;
 }
 
 /* Unsorted folder list section - same styling but separate */
@@ -696,7 +782,7 @@ body.is-dragging * {
 }
 
 .list-item:hover {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 .list-item.is-deleting {
@@ -738,6 +824,12 @@ body.is-dragging * {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .list-view::before,
+  .list-view::after,
+  .menu-highlight {
+    transition-duration: 1ms;
+  }
+
   .list-item.is-deleting {
     filter: none;
     transform: none;
@@ -799,7 +891,7 @@ body.is-dragging * {
 /* URL display on hover for links */
 .list-item-url {
   font-size: 1rem;
-  font-weight: 300;
+  font-weight: 400;
   color: var(--text-secondary);
   margin-left: 1rem;
   flex: 1 1 0;
@@ -808,10 +900,15 @@ body.is-dragging * {
   overflow: hidden;
   text-overflow: ellipsis;
   opacity: 0;
+  transition: opacity 100ms ease;
 }
 
 .list-item:hover .list-item-url,
 .list-item.keyboard-focused .list-item-url {
+  opacity: 1;
+}
+
+.search-active .list-item.search-url-match .list-item-url {
   opacity: 1;
 }
 
@@ -869,12 +966,16 @@ body.is-dragging * {
 
 /* Keyboard navigation focus state */
 .list-item.keyboard-focused {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 /* Ignore native drag's stale hover until the pointer moves again. */
 body:is(.drag-hover-reset, .is-drag-settling) .list-item:hover:not(.selected):not(.keyboard-focused) {
   background-color: transparent;
+}
+
+body:is(.drag-hover-reset, .is-drag-settling) .list-view::before {
+  opacity: 0;
 }
 
 body:is(.drag-hover-reset, .is-drag-settling) .list-item:not(.keyboard-focused) .list-item-url {
@@ -1084,7 +1185,11 @@ body.search-active .search-results-count {
   margin-bottom: 8px;
 }
 
-/* Highlight matching text in search results - removed */
+.search-active mark.search-match {
+  color: var(--text-primary);
+  background: var(--selection-bg);
+  border-radius: 4px;
+}
 
 /* The result count occupies the breadcrumb's exact position during search. */
 body.search-active .breadcrumb {
@@ -1105,12 +1210,12 @@ body.search-active .breadcrumb {
   cursor: pointer;
   text-decoration: none;
   color: inherit;
-  background-color: var(--bg-primary);
+  background-color: transparent;
   border-radius: 9999px;
 }
 
 .suggestion-item:hover {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 .suggestion-item .list-item-icon {
@@ -1142,7 +1247,7 @@ body.search-active .breadcrumb {
 
 /* Keyboard navigation focus state for suggestions */
 .suggestion-item.keyboard-focused {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 /* URL item (direct link) in search results */
@@ -1154,12 +1259,12 @@ body.search-active .breadcrumb {
   cursor: pointer;
   text-decoration: none;
   color: inherit;
-  background-color: var(--bg-primary);
+  background-color: transparent;
   border-radius: 9999px;
 }
 
 .url-item:hover {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 .url-item .list-item-icon {
@@ -1191,7 +1296,7 @@ body.search-active .breadcrumb {
 
 /* Keyboard navigation focus state for URL items */
 .url-item.keyboard-focused {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 /* Browser history items (visited pages) */
@@ -1203,13 +1308,13 @@ body.search-active .breadcrumb {
   cursor: pointer;
   text-decoration: none;
   color: inherit;
-  background-color: var(--bg-primary);
+  background-color: transparent;
   border-radius: 9999px;
   position: relative;
 }
 
 .browser-history-item:hover {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 .browser-history-item .list-item-icon {
@@ -1240,7 +1345,7 @@ body.search-active .breadcrumb {
 
 /* Keyboard navigation focus state for browser history items */
 .browser-history-item.keyboard-focused {
-  background-color: var(--bg-secondary);
+  background-color: transparent;
 }
 
 /* Multi-select styles */

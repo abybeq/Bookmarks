@@ -32,6 +32,79 @@ let displayedHistoryQuery = '';
 const sections = new Map();
 let folderView = null;
 let searchFocusWasNavigated = false;
+let activeSearchTerms = [];
+
+function searchTerms(query) {
+  return [...new Set(query.toLowerCase().trim().split(/\s+/u).filter(Boolean))];
+}
+
+function matchScore(entry, terms, phrase) {
+  const { title, url } = entry;
+  let score = 0;
+  for (const term of terms) {
+    const titleIndex = title.indexOf(term);
+    const urlIndex = url.indexOf(term);
+    if (titleIndex < 0 && urlIndex < 0) return -1;
+    if (titleIndex === 0) score += 100;
+    else if (titleIndex > 0 && /[^\p{L}\p{N}]/u.test(title[titleIndex - 1])) score += 75;
+    else if (titleIndex > 0) score += 50;
+    else score += 10;
+  }
+  const titleWords = title.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (title === phrase || (titleWords.length === terms.length && terms.every(term => titleWords.includes(term)))) score += 300;
+  else if (title.startsWith(phrase)) score += 200;
+  else if (title.includes(phrase)) score += 100;
+  return score;
+}
+
+export function rankBookmarkEntries(entries, query) {
+  const terms = searchTerms(query);
+  if (!terms.length) return [];
+  const phrase = terms.join(' ');
+  return entries.map((entry, index) => ({ entry, index, score: matchScore(entry, terms, phrase) }))
+    .filter(result => result.score >= 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(result => result.entry);
+}
+
+export function highlightRanges(value, terms) {
+  const lower = value.toLowerCase();
+  const ranges = [];
+  for (const term of terms) {
+    let index = lower.indexOf(term);
+    while (index >= 0) {
+      ranges.push([index, index + term.length]);
+      index = lower.indexOf(term, index + term.length);
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  return ranges.reduce((merged, range) => {
+    const last = merged.at(-1);
+    if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1]);
+    else merged.push([...range]);
+    return merged;
+  }, []);
+}
+
+function setHighlightedText(element, value, terms) {
+  const ranges = highlightRanges(value, terms);
+  if (!ranges.length) {
+    element.textContent = value;
+    return;
+  }
+  const nodes = [];
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    if (start > cursor) nodes.push(document.createTextNode(value.slice(cursor, start)));
+    const mark = document.createElement('mark');
+    mark.className = 'search-match';
+    mark.textContent = value.slice(start, end);
+    nodes.push(mark);
+    cursor = end;
+  }
+  if (cursor < value.length) nodes.push(document.createTextNode(value.slice(cursor)));
+  element.replaceChildren(...nodes);
+}
 
 export function markSearchFocusNavigated() {
   searchFocusWasNavigated = true;
@@ -138,6 +211,7 @@ export function exitSearchMode(renderItems, renderBreadcrumb, resetKeyboardFocus
   }
   displayedHistory = [];
   displayedHistoryQuery = '';
+  activeSearchTerms = [];
   historyLimit = INITIAL_HISTORY_LIMIT;
   historyLimitQuery = '';
   setSearchIcon('search');
@@ -152,10 +226,8 @@ export function searchAllItems(query) {
   const folders = [];
   const links = [];
   if (!normalizedQuery) return { folders, links, chromePages: [] };
-  for (const entry of getCachedBookmarkSearchEntries() || []) {
-    if (entry.title.includes(normalizedQuery) || entry.url.includes(normalizedQuery)) {
-      (entry.item.url ? links : folders).push(entry);
-    }
+  for (const entry of rankBookmarkEntries(getCachedBookmarkSearchEntries() || [], normalizedQuery)) {
+    (entry.item.url ? links : folders).push(entry);
   }
   return { folders, links, chromePages: searchChromePages(normalizedQuery) };
 }
@@ -230,21 +302,29 @@ function row(key, type, title, url = '', meta = '', itemId = '', parentTitle = '
 
 function updateRow(element, data) {
   const previous = element.searchRow;
+  const highlightKey = activeSearchTerms.join('\0');
+  const shouldHighlight = ['folder', 'link', 'browser-history', 'chrome-page'].includes(data.type);
+  const terms = shouldHighlight ? activeSearchTerms : [];
   if (data.type === 'folder' && (!previous || previous.parentTitle !== data.parentTitle)) {
     element.querySelector('.list-item-url').textContent = data.parentTitle;
   }
-  if (!previous || previous.title !== data.title) {
-    element.querySelector('.list-item-title').textContent = data.title;
+  if (!previous || previous.title !== data.title || previous.highlightKey !== highlightKey) {
+    setHighlightedText(element.querySelector('.list-item-title'), data.title, terms);
   }
-  if (!previous || previous.meta !== data.meta) {
+  if (!previous || previous.meta !== data.meta || previous.highlightKey !== highlightKey) {
     const meta = element.querySelector('.list-item-meta') || element.querySelector('.list-item-url');
-    if (meta) meta.textContent = data.type === 'link' ? getBookmarkDisplayUrl(data.meta) : data.meta;
+    if (meta) setHighlightedText(meta, data.type === 'link' ? getBookmarkDisplayUrl(data.meta) : data.meta,
+      ['link', 'chrome-page'].includes(data.type) ? terms : []);
   }
-  if (!previous || previous.url !== data.url) {
+  if (!previous || previous.url !== data.url || previous.highlightKey !== highlightKey) {
     if (element.tagName === 'A') element.setAttribute('href', data.url);
     if (data.type === 'url') element.dataset.url = data.url;
-    if (data.type === 'browser-history') element.querySelector('.list-item-url').textContent = data.url;
+    if (data.type === 'browser-history') {
+      setHighlightedText(element.querySelector('.list-item-url'), getBookmarkDisplayUrl(data.url), terms);
+    }
   }
+  element.classList.toggle('search-url-match', ['link', 'browser-history', 'chrome-page'].includes(data.type) &&
+    highlightRanges(['link', 'browser-history'].includes(data.type) ? getBookmarkDisplayUrl(data.url) : data.url, terms).length > 0);
   if (data.type === 'suggestion' || data.type === 'chatgpt') {
     element.dataset.suggestion = data.title;
     element.dataset.provider = data.type === 'chatgpt' ? 'chatgpt' : 'search';
@@ -257,7 +337,7 @@ function updateRow(element, data) {
       : data.type === 'suggestion' ? searchIconSvgHtml
         : getFaviconHtml(data.url, data.type === 'url' ? 'globe' : 'bookmark');
   }
-  element.searchRow = { ...data, iconKey };
+  element.searchRow = { ...data, iconKey, highlightKey };
 }
 
 function createRow(data) {
@@ -430,6 +510,7 @@ export function renderSearchResults(focusItem, preserveFocus = false) {
   const thisSearchId = currentSearchId + 1;
   setCurrentSearchId(thisSearchId);
   const query = searchQuery.trim();
+  activeSearchTerms = searchTerms(query);
   const normalizedQuery = query.toLowerCase();
   if (historyLimitQuery !== normalizedQuery) {
     historyLimitQuery = normalizedQuery;

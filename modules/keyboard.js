@@ -42,6 +42,7 @@ let moveThemePickerSelectionCallback = null;
 let confirmThemePickerSelectionCallback = null;
 let setItemSelectionCallback = null;
 let moveFocusedItemsCallback = null;
+let updateListHighlightCallback = null;
 let keyboardSelectionAnchorId = null;
 const FOCUSED_ITEM_TOP_GAP = 140;
 const FOCUSED_ITEM_BOTTOM_GAP = 48;
@@ -97,6 +98,7 @@ export function setKeyboardCallbacks(callbacks) {
   confirmThemePickerSelectionCallback = callbacks.confirmThemePickerSelection;
   setItemSelectionCallback = callbacks.setItemSelection;
   moveFocusedItemsCallback = callbacks.moveFocusedItems;
+  updateListHighlightCallback = callbacks.updateListHighlight;
 }
 
 // ============================================
@@ -110,14 +112,20 @@ export function clearItemFocus() {
   });
 }
 
-export function keepFocusedItemVisible(item) {
+function getFocusedItemScrollDelta(item) {
   const rect = item.getBoundingClientRect();
   const bottomBoundary = window.innerHeight - FOCUSED_ITEM_BOTTOM_GAP;
 
   if (rect.bottom > bottomBoundary) {
-    window.scrollBy({ top: rect.bottom - bottomBoundary, behavior: 'auto' });
-  } else if (rect.top < FOCUSED_ITEM_TOP_GAP) {
-    window.scrollBy({ top: rect.top - FOCUSED_ITEM_TOP_GAP, behavior: 'auto' });
+    return rect.bottom - bottomBoundary;
+  }
+  if (rect.top < FOCUSED_ITEM_TOP_GAP) return rect.top - FOCUSED_ITEM_TOP_GAP;
+  return 0;
+}
+
+export function keepFocusedItemVisible(item, scrollDelta = getFocusedItemScrollDelta(item)) {
+  if (scrollDelta !== 0) {
+    window.scrollBy({ top: scrollDelta, behavior: 'auto' });
   }
 }
 
@@ -134,6 +142,8 @@ export function focusItem(index, updateInputWithSuggestion = false) {
   setFocusedItemIndex(index);
   const item = navigableItems[focusedItemIndex];
   item.classList.add('keyboard-focused');
+  const scrollDelta = getFocusedItemScrollDelta(item);
+  updateListHighlightCallback?.(item, { animate: scrollDelta === 0 });
 
   updateSearchIconForFocusedItem(item);
 
@@ -144,7 +154,7 @@ export function focusItem(index, updateInputWithSuggestion = false) {
     }
   }
 
-  keepFocusedItemVisible(item);
+  keepFocusedItemVisible(item, scrollDelta);
 }
 
 export function focusItemById(itemId, resetSelectionAnchor = false) {
@@ -275,6 +285,7 @@ function focusAskTarget(index) {
   searchInput.value = originalSearchQuery;
   clearItemFocus();
   setFocusedItemIndex(index);
+  updateListHighlightCallback?.(null);
   searchInput.focus();
   searchInput.selectionStart = searchInput.selectionEnd = originalSearchQuery.length;
   showAskTarget(index === -2 ? 'chatgpt' : 'search');
@@ -385,6 +396,7 @@ export function resetKeyboardFocus() {
   keyboardSelectionAnchorId = null;
   setFocusedItemIndex(-1);
   clearItemFocus();
+  updateListHighlightCallback?.(null);
 
   if (isSearchMode && searchQuery.trim()) {
     const queryIsUrl = isUrl(searchQuery);

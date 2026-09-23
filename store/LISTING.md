@@ -16,7 +16,7 @@ Better Bookmarks turns your new tab into a focused workspace for the bookmarks a
 
 What you can do:
 
-- Search bookmarks and matching browsing history in one place, and remove individual history results when you choose.
+- Search bookmarks and matching browsing history in one place, and remove individual history results when you choose Delete.
 - Create, rename, move and delete bookmarks and folders.
 - Organize items with drag and drop or select several items at once.
 - Navigate folders and search results with your keyboard.

@@ -65,6 +65,74 @@ const breadcrumb = document.getElementById('breadcrumb');
 const searchInput = document.getElementById('search-input');
 const DELETE_ANIMATION_DURATION_MS = 200;
 
+function getHoverableListItem(target) {
+  if (!(target instanceof Element)) return null;
+  return target.closest('.list-item:not(.inline-folder-item):not(.inline-bookmark-item)');
+}
+
+function showListHover(item) {
+  if (!itemsGrid.contains(item) || item.classList.contains('selected')) {
+    hideListHover();
+    return;
+  }
+
+  const gridRect = itemsGrid.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  const startsFresh = !itemsGrid.classList.contains('list-hover-active');
+
+  if (startsFresh) itemsGrid.classList.add('list-hover-reset');
+
+  itemsGrid.style.setProperty('--list-hover-x', `${itemRect.left - gridRect.left}px`);
+  itemsGrid.style.setProperty('--list-hover-y', `${itemRect.top - gridRect.top}px`);
+  itemsGrid.style.setProperty('--list-hover-width', `${itemRect.width}px`);
+  itemsGrid.style.setProperty('--list-hover-height', `${itemRect.height}px`);
+
+  if (startsFresh) {
+    // Commit the new position while movement is disabled. Otherwise the
+    // browser can animate here from the last row after the pointer re-enters.
+    getComputedStyle(itemsGrid, '::before').transform;
+    itemsGrid.classList.remove('list-hover-reset');
+  }
+
+  itemsGrid.classList.add('list-hover-active');
+}
+
+function hideListHover() {
+  itemsGrid.classList.remove('list-hover-active');
+  itemsGrid.classList.add('list-hover-reset');
+}
+
+function showListFocus(item, animate = true) {
+  if (!itemsGrid.contains(item)) {
+    hideListFocus();
+    return;
+  }
+
+  const gridRect = itemsGrid.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  const startsFresh = !itemsGrid.classList.contains('list-focus-active');
+  const shouldSnap = startsFresh || !animate;
+
+  if (shouldSnap) itemsGrid.classList.add('list-focus-reset');
+
+  itemsGrid.style.setProperty('--list-focus-x', `${itemRect.left - gridRect.left}px`);
+  itemsGrid.style.setProperty('--list-focus-y', `${itemRect.top - gridRect.top}px`);
+  itemsGrid.style.setProperty('--list-focus-width', `${itemRect.width}px`);
+  itemsGrid.style.setProperty('--list-focus-height', `${itemRect.height}px`);
+
+  if (shouldSnap) {
+    getComputedStyle(itemsGrid, '::after').transform;
+    itemsGrid.classList.remove('list-focus-reset');
+  }
+
+  itemsGrid.classList.add('list-focus-active');
+}
+
+function hideListFocus() {
+  itemsGrid.classList.remove('list-focus-active');
+  itemsGrid.classList.add('list-focus-reset');
+}
+
 async function animateVisibleDeletion(itemIds) {
   const rows = itemIds.flatMap(itemId => Array.from(document.querySelectorAll(
     `.list-item[data-item-id="${CSS.escape(String(itemId))}"]`
@@ -207,6 +275,22 @@ function enterSearchModeWrapper(initialChar = '') {
 function initEventDelegation() {
   if (eventDelegationInitialized) return;
   setEventDelegationInitialized(true);
+
+  itemsGrid.addEventListener('pointerover', (e) => {
+    const item = getHoverableListItem(e.target);
+    if (item) showListHover(item);
+  });
+
+  itemsGrid.addEventListener('pointerout', (e) => {
+    const item = getHoverableListItem(e.target);
+    if (!item) return;
+
+    const nextItem = getHoverableListItem(e.relatedTarget);
+    if (nextItem && itemsGrid.contains(nextItem)) return;
+    hideListHover();
+  });
+
+  itemsGrid.addEventListener('pointerleave', hideListHover);
 
   // Click delegation for items grid
   itemsGrid.addEventListener('click', async (e) => {
@@ -507,7 +591,10 @@ async function init() {
     moveThemePickerSelection,
     confirmThemePickerSelection,
     setItemSelection,
-    moveFocusedItems
+    moveFocusedItems,
+    updateListHighlight: (item, options = {}) => item
+      ? showListFocus(item, options.animate !== false)
+      : hideListFocus()
   });
 
   // Initialize event delegation and context menu early for interactivity.

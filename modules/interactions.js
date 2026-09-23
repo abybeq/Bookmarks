@@ -41,6 +41,7 @@ let folderIconMenuOriginalIconName = null;
 let contextMenuAnchorElement = null;
 let lastPointerPosition = null;
 const FOLDER_ICON_GRID_COLUMNS = 6;
+const MENU_ITEM_SELECTOR = '.context-menu-item, .folder-icon-option';
 
 // Callbacks for render functions
 let renderItemsCallback = null;
@@ -72,6 +73,99 @@ export function initInteractionElements() {
   setContextMenu(document.getElementById('context-menu'));
   setBodyContextMenu(document.getElementById('body-context-menu'));
   folderIconMenu = document.getElementById('folder-icon-menu');
+
+  [contextMenu, bodyContextMenu, folderIconMenu].forEach(bindMenuHighlights);
+}
+
+function ensureMenuHighlights(surface) {
+  if (!surface) return;
+  for (const kind of ['hover', 'focus']) {
+    if (surface.querySelector(`:scope > .menu-highlight-${kind}`)) continue;
+    const highlight = document.createElement('div');
+    highlight.className = `menu-highlight menu-highlight-${kind} menu-highlight-reset`;
+    highlight.setAttribute('aria-hidden', 'true');
+    surface.prepend(highlight);
+  }
+}
+
+function getMenuHighlightSurface(item) {
+  return item?.closest('.folder-icon-grid, .context-menu') || null;
+}
+
+function showMenuHighlight(item, kind, animate = true) {
+  const surface = getMenuHighlightSurface(item);
+  if (!surface) return;
+  ensureMenuHighlights(surface);
+
+  const highlight = surface.querySelector(`:scope > .menu-highlight-${kind}`);
+  if (!highlight) return;
+
+  const surfaceRect = surface.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  const startsFresh = !highlight.classList.contains('active');
+  const shouldSnap = startsFresh || !animate;
+  if (shouldSnap) highlight.classList.add('menu-highlight-reset');
+
+  highlight.style.width = `${itemRect.width}px`;
+  highlight.style.height = `${itemRect.height}px`;
+  highlight.style.transform = `translate3d(${itemRect.left - surfaceRect.left + surface.scrollLeft}px, ${itemRect.top - surfaceRect.top + surface.scrollTop}px, 0)`;
+
+  if (shouldSnap) {
+    getComputedStyle(highlight).transform;
+    highlight.classList.remove('menu-highlight-reset');
+  }
+
+  highlight.classList.add('active');
+}
+
+function hideMenuHighlight(surface, kind) {
+  const highlight = surface?.querySelector(`:scope > .menu-highlight-${kind}`);
+  if (!highlight) return;
+  highlight.classList.remove('active');
+  highlight.classList.add('menu-highlight-reset');
+}
+
+function resetMenuHighlights(menu) {
+  menu?.querySelectorAll('.menu-highlight').forEach(highlight => {
+    highlight.classList.remove('active');
+    highlight.classList.add('menu-highlight-reset');
+  });
+}
+
+function bindMenuHighlights(menu) {
+  if (!menu || menu.dataset.highlightsBound === 'true') return;
+  menu.dataset.highlightsBound = 'true';
+
+  menu.addEventListener('pointerover', (event) => {
+    const item = event.target.closest(MENU_ITEM_SELECTOR);
+    if (item && menu.contains(item)) showMenuHighlight(item, 'hover');
+  });
+
+  menu.addEventListener('pointerout', (event) => {
+    const item = event.target.closest(MENU_ITEM_SELECTOR);
+    if (!item || !menu.contains(item)) return;
+    const nextItem = event.relatedTarget?.closest?.(MENU_ITEM_SELECTOR);
+    if (nextItem && menu.contains(nextItem)) return;
+    hideMenuHighlight(getMenuHighlightSurface(item), 'hover');
+  });
+
+  menu.addEventListener('pointerleave', () => {
+    const surface = menu.querySelector('.folder-icon-grid') || menu;
+    hideMenuHighlight(surface, 'hover');
+  });
+
+  menu.addEventListener('focusin', (event) => {
+    const item = event.target.closest(MENU_ITEM_SELECTOR);
+    if (item && menu.contains(item)) showMenuHighlight(item, 'focus');
+  });
+
+  menu.addEventListener('focusout', (event) => {
+    const item = event.target.closest(MENU_ITEM_SELECTOR);
+    if (!item || !menu.contains(item)) return;
+    const nextItem = event.relatedTarget?.closest?.(MENU_ITEM_SELECTOR);
+    if (nextItem && menu.contains(nextItem)) return;
+    hideMenuHighlight(getMenuHighlightSurface(item), 'focus');
+  });
 }
 
 // ============================================
@@ -858,8 +952,13 @@ function renderFolderIconOptions(query) {
     `;
   }).join('');
 
+  ensureMenuHighlights(grid);
+
   const activeOption = grid.querySelector('.folder-icon-option.active');
-  if (activeOption) previewFolderIconOption(activeOption);
+  if (activeOption) {
+    previewFolderIconOption(activeOption);
+    showMenuHighlight(activeOption, 'focus');
+  }
   else setActiveFolderIconOption(grid.querySelector('.folder-icon-option'));
 }
 
@@ -900,18 +999,18 @@ function setActiveFolderIconOption(option, shouldFocus = false) {
 
   previewFolderIconOption(option);
 
+  const scrollViewport = option.closest('.folder-icon-menu-content');
+  const scrollDelta = scrollViewport ? getIconOptionScrollDelta(
+    option.getBoundingClientRect(),
+    scrollViewport.getBoundingClientRect()
+  ) : 0;
+  showMenuHighlight(option, 'focus', scrollDelta === 0);
+
   if (shouldFocus) {
     option.focus({ preventScroll: true });
   }
 
-  const scrollViewport = option.closest('.folder-icon-menu-content');
-  if (scrollViewport) {
-    const scrollDelta = getIconOptionScrollDelta(
-      option.getBoundingClientRect(),
-      scrollViewport.getBoundingClientRect()
-    );
-    if (scrollDelta !== 0) scrollViewport.scrollTop += scrollDelta;
-  }
+  if (scrollViewport && scrollDelta !== 0) scrollViewport.scrollTop += scrollDelta;
 }
 
 export async function showBodyContextMenu(x, y) {
@@ -950,16 +1049,19 @@ export function hideContextMenu() {
   if (focusedMenuItem) focusedMenuItem.blur();
 
   if (contextMenu) {
+    resetMenuHighlights(contextMenu);
     contextMenu.classList.remove('active');
     contextMenu.querySelectorAll('.context-menu-item').forEach(item => { item.tabIndex = -1; });
     setContextMenuItemId(null);
     contextMenuAnchorElement = null;
   }
   if (bodyContextMenu) {
+    resetMenuHighlights(bodyContextMenu);
     bodyContextMenu.classList.remove('active');
     bodyContextMenu.querySelectorAll('.context-menu-item').forEach(item => { item.tabIndex = -1; });
   }
   if (folderIconMenu) {
+    resetMenuHighlights(folderIconMenu);
     if (
       folderIconMenu.classList.contains('active') &&
       folderIconMenuItemId &&
